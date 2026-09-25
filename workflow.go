@@ -85,41 +85,41 @@ func phaseError(phase string, err error) error {
 	}
 	return fmt.Errorf("%s: %s", phase, reason)
 }
-func backup(ctx context.Context, c config, out io.Writer, events *slog.Logger, verbose bool) error {
+func backup(ctx context.Context, c config, events *slog.Logger, verbose bool) (backupReport, error) {
 	// Single-purpose CLI: process-global umask also applies to xtrabackup.
 	syscall.Umask(0077)
 	root, err := openBackupRoot(ctx, c.BackupDir)
 	if err != nil {
-		return phaseError("validation", err)
+		return backupReport{}, phaseError("validation", err)
 	}
 	defer root.Close()
 	lk, err := lock(root)
 	if err != nil {
-		return phaseError("lock", err)
+		return backupReport{}, phaseError("lock", err)
 	}
 	defer lk.Close()
 	s, err := inspect(c.BackupDir)
 	if err != nil {
-		return phaseError("validation", err)
+		return backupReport{}, phaseError("validation", err)
 	}
 	if len(s.Incomplete) != 0 {
-		return phaseError("validation", errors.New("incomplete staging"))
+		return backupReport{}, phaseError("validation", errors.New("incomplete staging"))
 	}
 	if err = validateRuntime(c); err != nil {
-		return phaseError("validation", err)
+		return backupReport{}, phaseError("validation", err)
 	}
 	if err = freeSpace(c); err != nil {
-		return phaseError("validation", err)
+		return backupReport{}, phaseError("validation", err)
 	}
 	id, err := token()
 	if err != nil {
-		return phaseError("validation", err)
+		return backupReport{}, phaseError("validation", err)
 	}
 	stamp := now().UTC().Format("20060102T150405Z")
 	stage := "inprogress-" + stamp + "-" + id
 	completed := "backup-" + stamp + "-" + id
 	if err = root.Mkdir(stage, 0700); err != nil {
-		return phaseError("validation", err)
+		return backupReport{}, phaseError("validation", err)
 	}
 	finished := false
 	preserveStage := false
@@ -133,7 +133,7 @@ func backup(ctx context.Context, c config, out io.Writer, events *slog.Logger, v
 	logName := ".command-" + id
 	f, err := root.OpenFile(logName, os.O_CREATE|os.O_EXCL|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
 	if err != nil {
-		return phaseError("validation", err)
+		return backupReport{}, phaseError("validation", err)
 	}
 	defer func() {
 		fi, e1 := f.Stat()
@@ -184,20 +184,20 @@ func backup(ctx context.Context, c config, out io.Writer, events *slog.Logger, v
 		var uncertain *containmentUncertain
 		preserveStage = errors.As(err, &uncertain)
 		if saveErr := saveFailure(root, log); saveErr != nil {
-			return fmt.Errorf("%w; failure log unavailable", err)
+			return backupReport{}, fmt.Errorf("%w; failure log unavailable", err)
 		}
-		return err
+		return backupReport{}, err
 	}
 	if err = safeTree(dir); err != nil {
-		return phaseError("validation", err)
+		return backupReport{}, phaseError("validation", err)
 	}
 	if err = checkpoint(dir); err != nil {
-		return phaseError("validation", err)
+		return backupReport{}, phaseError("validation", err)
 	}
 	m := metadata{Format: formatVersion, CreatedAt: started.Format(time.RFC3339Nano), PreparedAt: now().UTC().Format(time.RFC3339Nano), XtrabackupVersion: v}
 	b, _ := json.MarshalIndent(m, "", "  ")
 	if err = writeExclusive(root, stage+"/xbkeeper.json", append(b, '\n')); err != nil {
-		return phaseError("validation", err)
+		return backupReport{}, phaseError("validation", err)
 	}
 	// Once prepared metadata is present, never discard the stage on a hashing,
 	// validation or cancellation failure; no retention runs before promotion.
@@ -206,7 +206,7 @@ func backup(ctx context.Context, c config, out io.Writer, events *slog.Logger, v
 	events.Info("phase start", "backup_id", completed, "phase", "hash")
 	stageRoot, openErr := root.OpenRoot(stage)
 	if openErr != nil {
-		return phaseError("hash", openErr)
+		return backupReport{}, phaseError("hash", openErr)
 	}
 	manifest, hashErr := generateStaged(ctx, stageRoot)
 	_ = stageRoot.Close()
@@ -215,36 +215,36 @@ func backup(ctx context.Context, c config, out io.Writer, events *slog.Logger, v
 	}
 	events.Info("phase end", "backup_id", completed, "phase", "hash", "duration", time.Since(beginHash).String(), "ok", hashErr == nil)
 	if hashErr != nil {
-		return phaseError("hash", hashErr)
+		return backupReport{}, phaseError("hash", hashErr)
 	}
 	if err = validBackup(dir); err != nil {
-		return phaseError("validation", err)
+		return backupReport{}, phaseError("validation", err)
 	}
 	if err = ctx.Err(); err != nil {
-		return phaseError("hash", err)
+		return backupReport{}, phaseError("hash", err)
 	}
 	if _, err = root.Lstat(completed); err == nil {
-		return phaseError("validation", errors.New("destination exists"))
+		return backupReport{}, phaseError("validation", errors.New("destination exists"))
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return phaseError("validation", err)
+		return backupReport{}, phaseError("validation", err)
 	}
 	if err = syncStaged(root, stage); err != nil {
 		preserveStage = true
-		return phaseError("durability", err)
+		return backupReport{}, phaseError("durability", err)
 	}
 	if err = ctx.Err(); err != nil {
-		return phaseError("durability", err)
+		return backupReport{}, phaseError("durability", err)
 	}
 	if err = renameInRoot(root, stage, completed); err != nil {
 		preserveStage = true
-		return phaseError("validation", err)
+		return backupReport{}, phaseError("validation", err)
 	}
 	finished = true
 	if err = syncPromotedParent(root); err != nil {
-		return phaseError("durability", err)
+		return backupReport{}, phaseError("durability", err)
 	}
 	if err = ctx.Err(); err != nil {
-		return phaseError("retention", err)
+		return backupReport{}, phaseError("retention", err)
 	}
 	begin := time.Now()
 	events.Info("phase start", "backup_id", completed, "phase", "retention")
@@ -254,13 +254,13 @@ func backup(ctx context.Context, c config, out io.Writer, events *slog.Logger, v
 	s, scanErr := inspect(c.BackupDir)
 	if scanErr != nil {
 		err = scanErr
-		return phaseError("retention", err)
+		return backupReport{}, phaseError("retention", err)
 	}
 	// The just-completed backup is protected even when the wall clock rolls back.
 	kept := 0
 	for _, old := range s.Backups {
 		if err = ctx.Err(); err != nil {
-			return phaseError("retention", err)
+			return backupReport{}, phaseError("retention", err)
 		}
 		if old == completed {
 			continue
@@ -270,17 +270,16 @@ func backup(ctx context.Context, c config, out io.Writer, events *slog.Logger, v
 			continue
 		}
 		if err = validBackup(filepath.Join(c.BackupDir, old)); err != nil {
-			return phaseError("retention", err)
+			return backupReport{}, phaseError("retention", err)
 		}
 		if err = ctx.Err(); err != nil {
-			return phaseError("retention", err)
+			return backupReport{}, phaseError("retention", err)
 		}
 		if err = removeRetained(root, old); err != nil {
-			return phaseError("retention", err)
+			return backupReport{}, phaseError("retention", err)
 		}
 	}
-	_, err = fmt.Fprintln(out, completed)
-	return err
+	return backupReport{Name: completed}, nil
 }
 func saveFailure(root *os.Root, log *commandTail) error {
 	b, err := log.Bytes()

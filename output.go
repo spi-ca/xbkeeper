@@ -125,7 +125,7 @@ func (l *lineOutput) flush() {
 			content = content[:(b.remaining-eventOverhead)/4]
 		}
 		b.remaining -= 4*len(content) + eventOverhead
-		b.logger.Info("child output", "phase", l.phase, "stream", l.stream, "line", string(content), "truncated", l.truncated || len(content) < len(l.buf))
+		b.logger.Debug("child output", "phase", l.phase, "stream", l.stream, "line", string(content), "truncated", l.truncated || len(content) < len(l.buf))
 	}
 	b.mu.Unlock()
 	l.buf = l.buf[:0]

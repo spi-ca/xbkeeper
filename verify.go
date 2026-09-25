@@ -4,10 +4,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"sort"
@@ -31,21 +29,22 @@ const (
 	reasonMismatch = "checksum or file set mismatch"
 )
 
-func verify(ctx context.Context, dir, selected string, out io.Writer, events *slog.Logger) error {
+func verify(ctx context.Context, dir, selected string, events *slog.Logger) (verifyReport, error) {
+	var report verifyReport
 	if selected != "" && (!managedName.MatchString(selected) || !strings.HasPrefix(selected, "backup-")) {
-		return errors.New("verify: invalid completed backup basename")
+		return report, errors.New("verify: invalid completed backup basename")
 	}
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("verify: %w", err)
+		return report, fmt.Errorf("verify: %w", err)
 	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return errors.New("verify: backup root unavailable")
+		return report, errors.New("verify: backup root unavailable")
 	}
 	defer root.Close()
 	lk, err := sharedLock(root)
 	if err != nil {
-		return errors.New("verify: shared lock unavailable or unsafe")
+		return report, errors.New("verify: shared lock unavailable or unsafe")
 	}
 	defer lk.Close()
 	var names []string
@@ -54,7 +53,7 @@ func verify(ctx context.Context, dir, selected string, out io.Writer, events *sl
 	} else {
 		entries, e := os.ReadDir(dir)
 		if e != nil {
-			return errors.New("verify: cannot list backups")
+			return report, errors.New("verify: cannot list backups")
 		}
 		for _, entry := range entries {
 			n := entry.Name()
@@ -65,19 +64,19 @@ func verify(ctx context.Context, dir, selected string, out io.Writer, events *sl
 		sort.Strings(names)
 	}
 	if len(names) == 0 {
-		return errors.New("verify: no completed backups")
+		return report, errors.New("verify: no completed backups")
 	}
-	report := verifyReport{Backups: make([]verifyResult, 0, len(names))}
+	report = verifyReport{Backups: make([]verifyResult, 0, len(names))}
 	failed := false
 	for _, n := range names {
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("verify: %w", err)
+			return report, fmt.Errorf("verify: %w", err)
 		}
 		begin := time.Now()
 		events.Info("phase start", "phase", "verify", "backup_id", n)
 		result, e := verifyOne(ctx, root, n)
 		if e != nil {
-			return fmt.Errorf("verify: %w", e)
+			return report, fmt.Errorf("verify: %w", e)
 		}
 		events.Info("phase end", "phase", "verify", "backup_id", n, "duration", time.Since(begin).String(), "ok", result.OK)
 		report.Backups = append(report.Backups, result)
@@ -86,15 +85,12 @@ func verify(ctx context.Context, dir, selected string, out io.Writer, events *sl
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("verify: %w", err)
-	}
-	if err := json.NewEncoder(out).Encode(report); err != nil {
-		return err
+		return report, fmt.Errorf("verify: %w", err)
 	}
 	if failed {
-		return errors.New("verify: one or more backups failed or are unverifiable")
+		return report, errors.New("verify: one or more backups failed or are unverifiable")
 	}
-	return nil
+	return report, nil
 }
 func matchingFileSet(files []string, expected map[string]string) bool {
 	if len(files) != len(expected)+1 {

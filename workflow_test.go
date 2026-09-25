@@ -130,7 +130,7 @@ func TestRetentionErrorPreservesCompleted(t *testing.T) {
 	removeRetained = func(*os.Root, string) error { return errors.New("secret retention failure") }
 	defer func() { removeRetained = prev }()
 	result, err := invoke(t, f, "backup")
-	if err == nil || !strings.Contains(err.Error(), "retention") || strings.Contains(err.Error(), "secret") || result != "" {
+	if err == nil || !strings.Contains(err.Error(), "retention") || strings.Contains(err.Error(), "secret") || !strings.Contains(result, "Result: failed:") {
 		t.Fatalf("result=%q error=%v", result, err)
 	}
 	s, err := invokeStatusJSON(t, f)
@@ -155,7 +155,7 @@ func TestFailureRedactionAndNoCommandLeftovers(t *testing.T) {
 			mark(t, f, failure)
 			var out, logs bytes.Buffer
 			err := runWithLog(context.Background(), []string{"backup", "--config", f.file}, &out, &logs)
-			if err == nil || out.Len() != 0 || bytes.Contains([]byte(err.Error()), []byte("secret")) || bytes.Contains(logs.Bytes(), []byte("secret")) {
+			if err == nil || !strings.Contains(out.String(), "Result: failed:") || bytes.Contains([]byte(err.Error()+out.String()), []byte("secret")) || bytes.Contains(logs.Bytes(), []byte("secret")) {
 				t.Fatalf("error=%v stdout=%q logs=%q", err, out.String(), logs.String())
 			}
 			phase := strings.TrimPrefix(failure, "fail-")

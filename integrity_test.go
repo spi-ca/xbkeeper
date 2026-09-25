@@ -19,19 +19,25 @@ import (
 
 func audit(t *testing.T, f fixture, name string) (verifyReport, error) {
 	t.Helper()
-	args := []string{"verify", "--config", f.file}
+	args := []string{"verify", "--json", "--config", f.file}
 	if name != "" {
 		args = append(args, "--backup", name)
 	}
 	var out bytes.Buffer
 	err := runWithLog(context.Background(), args, &out, &bytes.Buffer{})
-	var report verifyReport
-	if out.Len() != 0 {
-		if e := json.Unmarshal(out.Bytes(), &report); e != nil {
-			t.Fatal(e, out.String())
-		}
+	var envelope struct {
+		Command string        `json:"command"`
+		OK      bool          `json:"ok"`
+		Data    *verifyReport `json:"data"`
+		Error   *string       `json:"error"`
 	}
-	return report, err
+	if e := json.Unmarshal(out.Bytes(), &envelope); e != nil || envelope.Command != "verify" || envelope.OK != (err == nil) {
+		t.Fatalf("verify envelope: %v %q %v", e, out.String(), err)
+	}
+	if envelope.Data != nil {
+		return *envelope.Data, err
+	}
+	return verifyReport{}, err
 }
 func completed(t *testing.T, f fixture) string {
 	t.Helper()
@@ -60,19 +66,19 @@ func TestBuiltCLISmoke(t *testing.T) {
 	if e != nil {
 		t.Fatal("CLI backup:", e)
 	}
-	name = strings.TrimSpace(name)
+	name = strings.TrimSpace(strings.TrimPrefix(strings.SplitAfter(name, "Backup: ")[1], "Backup: "))
 	status, _, e := call("status", "--config", f.file)
 	if e != nil || !strings.Contains(status, name) {
 		t.Fatalf("CLI status: %v %s", e, status)
 	}
-	good, _, e := call("verify", "--config", f.file)
+	good, _, e := call("verify", "--json", "--config", f.file)
 	if e != nil || !strings.Contains(good, `"ok":true`) || !strings.Contains(good, `"files":3`) {
 		t.Fatalf("CLI verify: %v %s", e, good)
 	}
 	if e = os.WriteFile(filepath.Join(f.c.BackupDir, name, "data file-世界"), []byte("changed payload"), 0600); e != nil {
 		t.Fatal(e)
 	}
-	bad, _, e := call("verify", "--config", f.file, "--backup", name)
+	bad, _, e := call("verify", "--json", "--config", f.file, "--backup", name)
 	if e == nil || !strings.Contains(bad, `"ok":false`) {
 		t.Fatalf("CLI corrupt verify: %v %s", e, bad)
 	}

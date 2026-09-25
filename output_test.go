@@ -18,7 +18,7 @@ import (
 func TestStatusFormatsAndStaging(t *testing.T) {
 	f := setup(t)
 	empty, err := invoke(t, f, "status")
-	if err != nil || empty != "Backups (0):\nIncomplete (0):\nLast success: none\n" {
+	if err != nil || empty != "Command: status\nResult: ok\nBackups (0):\nIncomplete (0):\nLast success: none\n" {
 		t.Fatalf("empty: %q %v", empty, err)
 	}
 	for _, name := range []string{"inprogress-20200101T000000Z-0000000000000001", ".inprogress-20200101T000000Z-0000000000000002"} {
@@ -46,11 +46,7 @@ func TestStatusFormatsAndStaging(t *testing.T) {
 			t.Fatal("stage deleted", err)
 		}
 	}
-	for _, args := range [][]string{{"backup", "--json"}, {"status", "--verbose"}, {"verify", "--verbose"}} {
-		if err := run(context.Background(), args, &bytes.Buffer{}); err == nil {
-			t.Fatalf("accepted %v", args)
-		}
-	}
+
 }
 
 func TestVerboseSuccessKeepsMachineStdout(t *testing.T) {
@@ -70,12 +66,12 @@ func TestVerboseSuccessKeepsMachineStdout(t *testing.T) {
 	if err := runWithLog(context.Background(), []string{"backup", "--verbose", "--config", f.file}, &out, &logs); err != nil {
 		t.Fatal(err)
 	}
-	name := strings.TrimSpace(out.String())
+	name := strings.TrimSpace(strings.SplitAfter(out.String(), "Backup: ")[1])
 	if !strings.HasPrefix(name, "backup-") || strings.Contains(out.String(), "prepare-partial") || !strings.Contains(logs.String(), "phase=prepare stream=stderr line=prepare-partial") || strings.Contains(logs.String(), f.c.DefaultsFile) {
 		t.Fatalf("stdout=%q stderr=%q", out.String(), logs.String())
 	}
 	var verifyOut bytes.Buffer
-	if err := runWithLog(context.Background(), []string{"verify", "--config", f.file}, &verifyOut, &bytes.Buffer{}); err != nil || !json.Valid(verifyOut.Bytes()) {
+	if err := runWithLog(context.Background(), []string{"verify", "--json", "--config", f.file}, &verifyOut, &bytes.Buffer{}); err != nil || !json.Valid(verifyOut.Bytes()) {
 		t.Fatalf("verify: %v %q", err, verifyOut.String())
 	}
 }
@@ -103,7 +99,7 @@ func TestVerboseCLIStreamAndTail(t *testing.T) {
 	mark(t, f, "fail-backup")
 	var out, logs bytes.Buffer
 	err = runWithLog(context.Background(), []string{"backup", "--verbose", "--config", f.file}, &out, &logs)
-	if err == nil || !strings.Contains(err.Error(), "backup: xtrabackup execution failed (exit code 44)") || out.Len() != 0 {
+	if err == nil || !strings.Contains(err.Error(), "backup: xtrabackup execution failed (exit code 44)") || !strings.Contains(out.String(), "Result: failed: backup: xtrabackup execution failed (exit code 44)") {
 		t.Fatalf("result: %q %v", out.String(), err)
 	}
 	str := logs.String()
@@ -132,7 +128,7 @@ func TestVerboseCLIStreamAndTail(t *testing.T) {
 
 func TestLineOutputBoundsStreamsAndPartial(t *testing.T) {
 	var logs bytes.Buffer
-	b := &verboseBudget{remaining: 4*(maxVerboseLine+4) + 3*256, logger: slog.New(slog.NewTextHandler(&logs, nil))}
+	b := &verboseBudget{remaining: 4*(maxVerboseLine+4) + 3*256, logger: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}
 	stdout, stderr, flush := childOutputs(&bytes.Buffer{}, b, "prepare")
 	for _, p := range [][]byte{[]byte("a\nb"), bytes.Repeat([]byte("L"), maxVerboseLine+100), []byte("\ntrailing")} {
 		if _, err := stdout.Write(p); err != nil {
@@ -151,7 +147,7 @@ func TestLineOutputBoundsStreamsAndPartial(t *testing.T) {
 
 func TestUnterminatedLineFlushed(t *testing.T) {
 	var logs bytes.Buffer
-	b := &verboseBudget{remaining: maxVerboseOutput, logger: slog.New(slog.NewTextHandler(&logs, nil))}
+	b := &verboseBudget{remaining: maxVerboseOutput, logger: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}
 	stdout, _, flush := childOutputs(&bytes.Buffer{}, b, "backup")
 	_, _ = stdout.Write([]byte("unfinished"))
 	if logs.Len() != 0 {

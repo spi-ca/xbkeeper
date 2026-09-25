@@ -104,13 +104,39 @@ func invoke(t *testing.T, f fixture, cmd string) (string, error) {
 	t.Helper()
 	var b bytes.Buffer
 	err := run(context.Background(), []string{cmd, "--config", f.file}, &b)
+	if cmd == "backup" && err == nil {
+		_, name, ok := strings.Cut(b.String(), "Backup: ")
+		if !ok || !strings.Contains(b.String(), "Command: backup\nResult: ok\n") {
+			t.Fatalf("missing human backup result: %q", b.String())
+		}
+		return strings.TrimSpace(name), err
+	}
 	return b.String(), err
+}
+func decodeEnvelope(t *testing.T, raw []byte, command string) commandEnvelope {
+	t.Helper()
+	var result commandEnvelope
+	if err := json.Unmarshal(raw, &result); err != nil || result.Command != command {
+		t.Fatalf("invalid %s envelope: %s: %v", command, raw, err)
+	}
+	return result
 }
 func invokeStatusJSON(t *testing.T, f fixture) (string, error) {
 	t.Helper()
 	var b bytes.Buffer
 	err := run(context.Background(), []string{"status", "--json", "--config", f.file}, &b)
-	return b.String(), err
+	result := decodeEnvelope(t, b.Bytes(), "status")
+	if result.OK != (err == nil) {
+		t.Fatalf("status result/exit mismatch: %s %v", b.String(), err)
+	}
+	if result.Data == nil {
+		return "", err
+	}
+	payload, marshalErr := json.Marshal(result.Data)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	return string(payload), err
 }
 func mark(t *testing.T, f fixture, name string) {
 	t.Helper()
@@ -406,8 +432,12 @@ func TestCommandConfigSelection(t *testing.T) {
 		{"status default", "status", defaultConfigPath, "", []string{"status"}, true},
 		{"status json", "status", defaultConfigPath, "", []string{"status", "--json"}, true},
 		{"backup verbose", "backup", defaultConfigPath, "", []string{"backup", "--verbose"}, true},
-		{"backup json rejected", "", "", "", []string{"backup", "--json"}, false},
-		{"status verbose rejected", "", "", "", []string{"status", "--verbose"}, false},
+		{"backup json", "backup", defaultConfigPath, "", []string{"backup", "--json"}, true},
+		{"status verbose", "status", defaultConfigPath, "", []string{"status", "--verbose"}, true},
+		{"global verbose backup", "backup", defaultConfigPath, "", []string{"--verbose", "backup"}, true},
+		{"global verbose status", "status", defaultConfigPath, "", []string{"--verbose", "status"}, true},
+		{"global verbose verify", "verify", defaultConfigPath, "", []string{"--verbose", "verify"}, true},
+		{"verify json verbose", "verify", defaultConfigPath, "", []string{"verify", "--json", "--verbose"}, true},
 		{"verify default", "verify", defaultConfigPath, "", []string{"verify"}, true},
 		{"verify selected default", "verify", defaultConfigPath, "backup-20200101T000000Z-0000000000000000", []string{"verify", "--backup", "backup-20200101T000000Z-0000000000000000"}, true},
 		{"override", "backup", "/tmp/config.toml", "", []string{"backup", "--config", "/tmp/config.toml"}, true},
@@ -421,7 +451,10 @@ func TestCommandConfigSelection(t *testing.T) {
 		{"unknown command", "", "", "", []string{"unknown"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd, path, backup, _, err := parseOptions(tc.args)
+			cmd, path, backup, flags, err := parseOptions(tc.args)
+			if strings.HasPrefix(tc.name, "global verbose") && !flags.verbose {
+				t.Fatal("global verbose not applied")
+			}
 			if (err == nil) != tc.valid {
 				t.Fatalf("parse error = %v, valid = %v", err, tc.valid)
 			}
@@ -444,8 +477,8 @@ func TestMissingOrUnsafeConfigFailsWithoutCreatingIt(t *testing.T) {
 		if _, err := os.Lstat(missing); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("%s created missing config: %v", command, err)
 		}
-		if out.Len() != 0 {
-			t.Fatalf("%s wrote output with missing config: %q", command, out.String())
+		if !strings.Contains(out.String(), "Result: failed: config: config file missing") {
+			t.Fatalf("%s missing failure result: %q", command, out.String())
 		}
 	}
 	if err := os.Chmod(f.file, 0644); err != nil {

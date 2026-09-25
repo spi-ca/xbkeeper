@@ -50,7 +50,7 @@ authorized by this change.
 4. This records the prior unit-migration handoff: preserve the completed 0.2.0
    integrity implementation and never rebuild from the stale 0.1 archive. The
    subsequent TOML migration initially bumped the source to 0.3.0; the current
-   pinned source version is v20260926-4. Keep its archive, checksum and .SRCINFO
+   pinned source version is v20260926-5. Keep its archive, checksum and .SRCINFO
    synchronized whenever the source snapshot changes.
    Verify archive contents include integrity sources/tests, new units, TOML
    examples and module sums. Never bypass checksums or imply a release occurred.

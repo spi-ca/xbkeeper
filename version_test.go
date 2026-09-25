@@ -27,11 +27,11 @@ func TestReleaseVersionContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const version = "v20260926-4"
+	const version = "v20260926-5"
 	if !strings.Contains(string(makefile), "VERSION := "+version+"\n") {
 		t.Fatal("Makefile must pin the full canonical version")
 	}
-	if !strings.Contains(string(pkg), "pkgver=20260926\npkgrel=4\n") {
+	if !strings.Contains(string(pkg), "pkgver=20260926\npkgrel=5\n") {
 		t.Fatal("Arch pkgver/pkgrel must match the pinned version")
 	}
 	for _, part := range []string{
@@ -92,17 +92,17 @@ func TestReleaseVersionContract(t *testing.T) {
 		name, tag, makeVersion, pkgver, pkgrel string
 		valid                                  bool
 	}{
-		{"current", version, version, "20260926", "4", true},
-		{"same-day-revision", "v20260926-5", "v20260926-5", "20260926", "5", true},
+		{"current", version, version, "20260926", "5", true},
+		{"same-day-revision", "v20260926-6", "v20260926-6", "20260926", "6", true},
 		{"invalid-date", "v20261399-1", "v20261399-1", "20261399", "1", false},
 		{"invalid-leap-day", "v20260229-1", "v20260229-1", "20260229", "1", false},
 		{"valid-leap-day", "v20280229-1", "v20280229-1", "20280229", "1", true},
 		{"old-semver", "v0.3.0", "v0.3.0", "0.3.0", "1", false},
 		{"zero-revision", "v20260926-0", "v20260926-0", "20260926", "0", false},
 		{"no-v-prefix", "20260926-1", "20260926-1", "20260926", "1", false},
-		{"mismatched-make", version, "v20260925-1", "20260926", "4", false},
-		{"mismatched-pkgver", version, version, "20260925", "3", false},
-		{"mismatched-pkgrel", version, version, "20260926", "3", false},
+		{"mismatched-make", version, "v20260925-1", "20260926", "5", false},
+		{"mismatched-pkgver", version, version, "20260925", "5", false},
+		{"mismatched-pkgrel", version, version, "20260926", "4", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -221,7 +221,7 @@ func TestReleasePinnedChecksum(t *testing.T) {
 				}
 			}
 			payload := []byte("fixture source archive")
-			if err := os.WriteFile(filepath.Join(dir, "dist/xbkeeper-v20260926-4.tar.gz"), payload, 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "dist/xbkeeper-v20260926-5.tar.gz"), payload, 0600); err != nil {
 				t.Fatal(err)
 			}
 			sum := fmt.Sprintf("%x", sha256.Sum256(payload))
@@ -233,7 +233,7 @@ func TestReleasePinnedChecksum(t *testing.T) {
 			}
 			cmd := exec.Command("bash", "-c", strings.Join(lines, "\n"))
 			cmd.Dir = dir
-			cmd.Env = append(os.Environ(), "VERSION=v20260926-4")
+			cmd.Env = append(os.Environ(), "VERSION=v20260926-5")
 			output, err := cmd.CombinedOutput()
 			if (err == nil) != valid {
 				t.Fatalf("valid=%t: %v: %s", valid, err, output)

@@ -61,14 +61,17 @@ audit reports each completed backup's result even if some fail.
 - Match the exact regular-file set as well as each digest: missing/extra files
   and bad content fail. Do not dump file contents, credential values or arbitrary
   manifest input to diagnostics. Report safe backup name, outcome and counts.
-- Emit JSON on stdout, safe phase/timing logs on stderr; return nonzero on any
-  failed or unverifiable selected backup. Example:
-  `{"backups":[{"name":"backup-20260101T000000Z-0123456789abcdef","ok":true,"files":3}]}`.
+- Default stdout is a human command/result summary and per-backup list; `--json`
+  emits one `{command,ok,data,error}` object, with the original verify results
+  nested in `data`. Example:
+  `{"command":"verify","ok":true,"data":{"backups":[{"name":"backup-20260101T000000Z-0123456789abcdef","ok":true,"files":3}]},"error":null}`.
   `files` counts successfully hashed files during this audit (not expected
   manifest entries; zero on structural failure). Failure reasons are fixed:
   `invalid or unsafe backup`, `checksum or file set mismatch`, or
   `legacy format 1 is unverifiable`. Missing exact selections are invalid
-  results. With no completed names or no usable lock, exit nonzero without JSON.
+  results. With no completed names or no usable lock, exit nonzero with a
+  human failure summary or a JSON envelope with `data:null`. Safe phase/timing
+  events go to stderr, not stdout.
 - Check cancellation while walking/hashing large files. Hashing may add a full
   sequential read of the backup; no automatic daily rehash of old backups.
 
