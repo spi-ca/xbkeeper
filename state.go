@@ -15,9 +15,13 @@ import (
 	"time"
 )
 
-func safeTree(path string) error {
+func safeTree(path string) error { return safeTreeContext(context.Background(), path) }
+func safeTreeContext(ctx context.Context, path string) error {
 	return filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		fi, err := os.Lstat(p)
@@ -70,6 +74,9 @@ func checkpointRoot(ctx context.Context, r *os.Root) error {
 }
 func validBackup(path string) error { return validBackupContext(context.Background(), path) }
 func validBackupContext(ctx context.Context, path string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	fi, err := os.Lstat(path)
 	if err != nil {
 		return err
@@ -131,22 +138,38 @@ func validBackupRoot(ctx context.Context, r *os.Root) error {
 	}
 	return nil
 }
-func inspect(root string) (status, error) {
-	s := status{Backups: []string{}, Incomplete: []string{}}
+func inspect(root string) (status, error) { return inspectContext(context.Background(), root) }
+func inspectContext(ctx context.Context, root string) (status, error) {
+	s := status{Backups: []string{}, Incomplete: []string{}, PendingDeletions: []string{}}
+	if err := ctx.Err(); err != nil {
+		return s, err
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return s, err
 	}
 	prepared := make(map[string]time.Time)
 	for _, e := range entries {
+		if err := ctx.Err(); err != nil {
+			return s, err
+		}
 		name := e.Name()
 		if !managedName.MatchString(name) {
 			continue
 		}
+		if strings.HasPrefix(name, ".deleting-") {
+			// A rename out of the completed namespace precedes any unlink.
+			// A partial deletion cannot be validated as a completed backup.
+			s.PendingDeletions = append(s.PendingDeletions, name)
+			continue
+		}
 		path := filepath.Join(root, name)
 		if strings.HasPrefix(name, "backup-") {
-			if err := validBackup(path); err != nil {
+			if err := validBackupContext(ctx, path); err != nil {
 				return s, fmt.Errorf("invalid managed backup %q: %w", name, err)
+			}
+			if err := ctx.Err(); err != nil {
+				return s, err
 			}
 			b, err := os.ReadFile(filepath.Join(path, "xbkeeper.json"))
 			if err != nil {
@@ -156,10 +179,13 @@ func inspect(root string) (status, error) {
 			if err := strictJSON(b, &m); err != nil {
 				return s, err
 			}
+			if err := ctx.Err(); err != nil {
+				return s, err
+			}
 			prepared[name], _ = time.Parse(time.RFC3339Nano, m.PreparedAt)
 			s.Backups = append(s.Backups, name)
 		} else {
-			if err := safeTree(path); err != nil {
+			if err := safeTreeContext(ctx, path); err != nil {
 				return s, fmt.Errorf("invalid staging %q: %w", name, err)
 			}
 			s.Incomplete = append(s.Incomplete, name)
@@ -173,6 +199,10 @@ func inspect(root string) (status, error) {
 		return prepared[a].After(prepared[b])
 	})
 	sort.Strings(s.Incomplete)
+	sort.Strings(s.PendingDeletions)
+	if err := ctx.Err(); err != nil {
+		return s, err
+	}
 	if len(s.Backups) > 0 {
 		s.LastSuccess = s.Backups[0]
 	}

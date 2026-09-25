@@ -86,6 +86,11 @@ func TestPackagedServiceContract(t *testing.T) {
 		"ReadWritePaths": "/var/backups/xtrabackup",
 		"ProtectHome":    "true", "PrivateTmp": "true", "NoNewPrivileges": "true",
 		"RestrictAddressFamilies": "AF_UNIX",
+		"CapabilityBoundingSet":   "~CAP_SYS_ADMIN CAP_SYS_MODULE CAP_SYS_RAWIO CAP_SYS_BOOT CAP_SYS_TIME CAP_NET_ADMIN CAP_NET_RAW CAP_BPF CAP_PERFMON CAP_MKNOD",
+		"PrivateDevices":          "true", "ProtectKernelTunables": "true", "ProtectKernelModules": "true",
+		"ProtectKernelLogs": "true", "ProtectControlGroups": "true", "ProtectClock": "true",
+		"RestrictNamespaces": "true", "RestrictSUIDSGID": "true", "RestrictRealtime": "true",
+		"LockPersonality": "true", "SystemCallArchitectures": "native",
 	})
 }
 
@@ -132,7 +137,7 @@ func TestPackageInstallsUnitsWithoutActivationOrProvisioning(t *testing.T) {
 		t.Fatal(err)
 	}
 	pkg := string(content)
-	if !strings.Contains(pkg, "pkgver=20260926\npkgrel=6\n") {
+	if !strings.Contains(pkg, "pkgver=20260926\npkgrel=7\n") {
 		t.Error("package must be version 20260926, release 6")
 	}
 	if strings.Count(pkg, "backup=(") != 1 || !strings.Contains(pkg, "\n  backup=('etc/xbkeeper/xbkeeper.toml' 'etc/mysql/xbkeeper.cnf')\n") {

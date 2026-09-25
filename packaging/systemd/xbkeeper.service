@@ -18,3 +18,18 @@ ProtectHome=true
 PrivateTmp=true
 NoNewPrivileges=true
 RestrictAddressFamilies=AF_UNIX
+# First-stage denylist, not a measured minimum. Keep DAC/NICE/resource caps
+# pending real backup validation, and SYS_PTRACE for /proc group inspection
+# on hosts using hidepid. Do not hide processes from the containment check.
+CapabilityBoundingSet=~CAP_SYS_ADMIN CAP_SYS_MODULE CAP_SYS_RAWIO CAP_SYS_BOOT CAP_SYS_TIME CAP_NET_ADMIN CAP_NET_RAW CAP_BPF CAP_PERFMON CAP_MKNOD
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native

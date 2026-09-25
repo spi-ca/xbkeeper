@@ -51,14 +51,14 @@ prefetch and verify it separately for offline builds. No automatic package
 install (`-i`) is used. The split recipe explicitly detaches Go DWARF symbols,
 strips the main binary's debug sections, adds a GNU debuglink and disables
 makepkg's automatic debug package. `xbkeeper-debug` contains the separate
-symbols and licenses and depends on `xbkeeper=20260926-6`; it is **optional**
+symbols and licenses and depends on `xbkeeper=20260926-7`; it is **optional**
 for running xbkeeper, including `--verbose` (which controls runtime logs, not
 debug symbols). Install both matching files in one reviewed transaction when
 symbols are desired:
 
 ```sh
-sudo pacman -U ./xbkeeper-20260926-6-x86_64.pkg.tar.zst \
-  ./xbkeeper-debug-20260926-6-x86_64.pkg.tar.zst
+sudo pacman -U ./xbkeeper-20260926-7-x86_64.pkg.tar.zst \
+  ./xbkeeper-debug-20260926-7-x86_64.pkg.tar.zst
 ```
 
 This is an example for a separately approved host deployment, not an instruction
@@ -67,10 +67,10 @@ to run it during build/review; normal main-only installation is also supported.
 `make dist` uses deterministic archive timestamps, owner IDs, regular-file modes
 (0644) and gzip headers, and copies the archive next to `PKGBUILD` for makepkg's
 local-source lookup. Source file permissions/umask do not change its checksum.
-The canonical pinned version is `v20260926-6`: the release tag, Makefile
+The canonical pinned version is `v20260926-7`: the release tag, Makefile
 `VERSION`, source archive directory/name and binary `version` output use the
 full `vYYYYMMDD-N` string. Arch splits it into `pkgver=20260926` and
-`pkgrel=6`. A further release on the same day requires another revision and a
+`pkgrel=7`. A further release on the same day requires another revision and a
 **new matching source archive**; never bump only `pkgrel` while reusing the
 previous source version/archive. Versions are pinned, not generated from the
 build date. After intentionally changing source files, update all version
@@ -100,7 +100,7 @@ After building, inspect the package file list and `.PKGINFO`, including the
 `/usr/lib/systemd/system` units, the tmpfiles rule, the private `/etc/xbkeeper` config permissions
 and both `backup` entries and the `/etc/mysql` template/file modes; check the
 extracted binary's `version` command without running `backup`. Verify that
-`xbkeeper-debug` has exactly `depend = xbkeeper=20260926-6` in `.PKGINFO`,
+`xbkeeper-debug` has exactly `depend = xbkeeper=20260926-7` in `.PKGINFO`,
 contains `/usr/lib/debug/usr/bin/xbkeeper.debug`, and the main binary has a
 matching GNU debuglink. Keep package archives out of Git. Package creation
 does not establish real backup or restore correctness.

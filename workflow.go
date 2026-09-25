@@ -19,7 +19,9 @@ import (
 
 // now is overridden only by sequential clock-skew tests; wall timestamps remain honest.
 var now = time.Now
-var removeRetained = removeTree
+var removeRetained = removeTreeContext
+var renameRetained = renameNoReplace
+var syncRetainedParent = syncRoot
 var generateStaged = generateManifest
 var syncStaged = syncTree
 var syncPromotedParent = syncRoot
@@ -98,7 +100,7 @@ func backup(ctx context.Context, c config, events *slog.Logger, verbose bool) (b
 		return backupReport{}, phaseError("lock", err)
 	}
 	defer lk.Close()
-	s, err := inspect(c.BackupDir)
+	s, err := inspectContext(ctx, c.BackupDir)
 	if err != nil {
 		return backupReport{}, phaseError("validation", err)
 	}
@@ -251,10 +253,34 @@ func backup(ctx context.Context, c config, events *slog.Logger, verbose bool) (b
 	defer func() {
 		events.Info("phase end", "backup_id", completed, "phase", "retention", "duration", time.Since(begin).String(), "ok", err == nil)
 	}()
-	s, scanErr := inspect(c.BackupDir)
+	s, scanErr := inspectContext(ctx, c.BackupDir)
 	if scanErr != nil {
 		err = scanErr
 		return backupReport{}, phaseError("retention", err)
+	}
+	// A previous unlink may have stopped halfway. Retry only exact deletion
+	// namespace entries, after the new completed backup is durably promoted.
+	// Space preflight ran before this point, so a full volume still fails safe.
+	for _, pending := range s.PendingDeletions {
+		if err = ctx.Err(); err != nil {
+			return backupReport{}, phaseError("retention", err)
+		}
+		// A legitimate interrupted deletion always leaves a directory, never
+		// a standalone file or link bearing a reserved-looking name.
+		fi, statErr := root.Lstat(pending)
+		if statErr != nil || !fi.IsDir() {
+			err = errors.New("invalid pending deletion directory")
+			return backupReport{}, phaseError("retention", err)
+		}
+		if err = safeTreeContext(ctx, filepath.Join(c.BackupDir, pending)); err != nil {
+			return backupReport{}, phaseError("retention", err)
+		}
+		if err = removeRetained(ctx, root, pending); err != nil {
+			return backupReport{}, phaseError("retention", err)
+		}
+		if err = syncRetainedParent(root); err != nil {
+			return backupReport{}, phaseError("retention", err)
+		}
 	}
 	// The just-completed backup is protected even when the wall clock rolls back.
 	kept := 0
@@ -269,13 +295,40 @@ func backup(ctx context.Context, c config, events *slog.Logger, verbose bool) (b
 			kept++
 			continue
 		}
-		if err = validBackup(filepath.Join(c.BackupDir, old)); err != nil {
+		if err = validBackupContext(ctx, filepath.Join(c.BackupDir, old)); err != nil {
 			return backupReport{}, phaseError("retention", err)
 		}
 		if err = ctx.Err(); err != nil {
 			return backupReport{}, phaseError("retention", err)
 		}
-		if err = removeRetained(root, old); err != nil {
+		pending := ".deleting-" + strings.TrimPrefix(old, "backup-")
+		// Never overwrite an existing pending tree (including a symlink).
+		if _, statErr := root.Lstat(pending); statErr == nil {
+			return backupReport{}, phaseError("retention", errors.New("deletion destination exists"))
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return backupReport{}, phaseError("retention", statErr)
+		}
+		if err = ctx.Err(); err != nil {
+			return backupReport{}, phaseError("retention", err)
+		}
+		if err = renameRetained(root, old, pending); err != nil {
+			return backupReport{}, phaseError("retention", err)
+		}
+		// Persist the removal from the completed namespace before unlinking.
+		// Sync failure leaves the whole renamed tree for a later safe retry.
+		if err = syncRetainedParent(root); err != nil {
+			return backupReport{}, phaseError("retention", err)
+		}
+		if err = ctx.Err(); err != nil {
+			return backupReport{}, phaseError("retention", err)
+		}
+		if err = safeTreeContext(ctx, filepath.Join(c.BackupDir, pending)); err != nil {
+			return backupReport{}, phaseError("retention", err)
+		}
+		if err = removeRetained(ctx, root, pending); err != nil {
+			return backupReport{}, phaseError("retention", err)
+		}
+		if err = syncRetainedParent(root); err != nil {
 			return backupReport{}, phaseError("retention", err)
 		}
 	}

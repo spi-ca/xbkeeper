@@ -127,7 +127,7 @@ func TestRetentionErrorPreservesCompleted(t *testing.T) {
 		t.Fatal(err)
 	}
 	prev := removeRetained
-	removeRetained = func(*os.Root, string) error { return errors.New("secret retention failure") }
+	removeRetained = func(context.Context, *os.Root, string) error { return errors.New("secret retention failure") }
 	defer func() { removeRetained = prev }()
 	result, err := invoke(t, f, "backup")
 	if err == nil || !strings.Contains(err.Error(), "retention") || strings.Contains(err.Error(), "secret") || !strings.Contains(result, "Result: failed:") {
@@ -141,11 +141,11 @@ func TestRetentionErrorPreservesCompleted(t *testing.T) {
 	if err = json.Unmarshal([]byte(s), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Backups) != 2 {
-		t.Fatalf("retention error deleted a backup: %+v", got)
+	if len(got.Backups) != 1 || len(got.PendingDeletions) != 1 || len(got.Incomplete) != 0 {
+		t.Fatalf("retention error did not isolate old backup: %+v", got)
 	}
-	if _, err = os.Stat(filepath.Join(f.c.BackupDir, strings.TrimSpace(first))); err != nil {
-		t.Fatal(err)
+	if _, err = os.Stat(filepath.Join(f.c.BackupDir, strings.TrimSpace(first))); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("old backup remained in completed namespace", err)
 	}
 }
 func TestFailureRedactionAndNoCommandLeftovers(t *testing.T) {

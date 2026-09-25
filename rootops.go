@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
+	"unsafe"
 )
 
 // Sequential tests inject parent-sync failures without changing filesystem policy.
@@ -117,6 +119,43 @@ func renameInRoot(r *os.Root, from, to string) error {
 	defer d.Close()
 	return syscall.Renameat(int(d.Fd()), from, int(d.Fd()), to)
 }
+
+// Refuse a destination created between the collision check and rename. The
+// kernel primitive must succeed; do not fall back to an overwriting rename.
+func renameNoReplace(r *os.Root, from, to string) error {
+	d, err := r.Open(".")
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	src, err := syscall.BytePtrFromString(from)
+	if err != nil {
+		return err
+	}
+	dst, err := syscall.BytePtrFromString(to)
+	if err != nil {
+		return err
+	}
+	// syscall does not expose RENAMEAT2 on all supported Go versions.
+	// Only the packaged Linux architectures have known syscall numbers.
+	var trap uintptr
+	switch runtime.GOARCH {
+	case "amd64":
+		trap = 316
+	case "arm64":
+		trap = 276
+	default:
+		return syscall.ENOSYS // never fall back to an overwriting rename
+	}
+	const renameNoReplaceFlag = 1 // Linux RENAME_NOREPLACE
+	_, _, errno := syscall.Syscall6(trap, d.Fd(), uintptr(unsafe.Pointer(src)), d.Fd(), uintptr(unsafe.Pointer(dst)), renameNoReplaceFlag, 0)
+	runtime.KeepAlive(src)
+	runtime.KeepAlive(dst)
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}
 func writeExclusive(r *os.Root, name string, data []byte) error {
 	f, err := r.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
 	if err != nil {
@@ -204,6 +243,12 @@ func syncRoot(r *os.Root) error {
 // Callers validate the entire tree before invoking this, and the backup root is
 // owner-only. Each step checks again before descending.
 func removeTree(r *os.Root, name string) error {
+	return removeTreeContext(context.Background(), r, name)
+}
+func removeTreeContext(ctx context.Context, r *os.Root, name string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	fi, err := r.Lstat(name)
 	if err != nil {
 		return err
@@ -215,6 +260,9 @@ func removeTree(r *os.Root, name string) error {
 	if fi.Mode().IsRegular() {
 		if fi.Sys().(*syscall.Stat_t).Nlink != 1 {
 			return errors.New("unsafe hardlinked removal target")
+		}
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		return r.Remove(name)
 	}
@@ -236,9 +284,12 @@ func removeTree(r *os.Root, name string) error {
 		return err
 	}
 	for _, entry := range names {
-		if err := removeTree(sub, entry); err != nil {
+		if err := removeTreeContext(ctx, sub, entry); err != nil {
 			return err
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	return r.Remove(name)
 }
