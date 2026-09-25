@@ -1,7 +1,7 @@
 # TOML configuration and packaged examples
 
 Status: configuration migration originally implemented at version 0.3.0;
-the current pinned source version is v20260926-2. Independent
+the current pinned source version is v20260926-4. Independent
 design and implementation reviews completed; review findings required exact-case
 key checks and complete-fixture negative/escape tests. Packaging validation
 requirements are recorded below.
@@ -21,15 +21,16 @@ renaming JSON content to `.toml` is not migration.
   `backup_dir`, `datadir`, `socket`, `defaults_file`, `keep`, `min_free_bytes`,
   optional `xtrabackup` (defaults to `/usr/bin/xtrabackup`). Reject duplicate,
   unknown, incorrectly cased, nested and wrongly typed fields. Keep permission,
-  path, size and range checks. Do not leak parser input/credential content in
+  path, size and range checks. Only backup may initialize missing backup-root
+  components beneath trusted ancestors; status/verify remain read-only. Do not leak parser input/credential content in
   diagnostics. TOML comments and integer separators should work normally.
 - TOML is the sole runtime config format; do not silently fall back to JSON.
   Changing a suffix is not conversion: existing JSON content needs explicit
   operator migration. The original plan called for tool version 0.3.0 and Arch
   release 1; the current version policy supersedes that numbering with
-  `v20260926-2` (`pkgver=20260926`, `pkgrel=2`).
+  `v20260926-4` (`pkgver=20260926`, `pkgrel=4`).
 - `xbkeeper.json` INSIDE a backup, metadata versions 1/2, `SHA256SUMS`, and JSON
-  `status`/`verify` output remain unchanged. Keep strict JSON checks for metadata.
+  `status --json`/`verify` output retain their schema; default status is human-readable. Keep strict JSON checks for metadata.
   Never bulk-replace every `.json` reference or alter existing backup artifacts.
 
 ## Ownership and paths
@@ -39,12 +40,14 @@ renaming JSON content to `.toml` is not migration.
 - Install the generic default at `/etc/xbkeeper/xbkeeper.toml` (root-owned mode
   0600, parent directory 0700), with a pacman `backup` entry preserving modified
   operator configs across upgrades. Keep the documentation copy mode 0644 under
-  `/usr/share/doc/xbkeeper/examples/`. No real secrets, config-generation hook
-  or automatic activation.
+  `/usr/share/doc/xbkeeper/examples/`. The later MySQL template adds its own
+  pacman `backup` entry and mode 0644 documentation copy without active secrets,
+  a config-generation hook or automatic activation.
 - Operator config: review and adapt the installed default at
   `/etc/xbkeeper/xbkeeper.toml` before use; it is not a host-specific config.
-  The credential option file remains separately managed at
-  `/etc/mysql/xbkeeper.cnf` (root-owned 0600).
+  The package now installs a comment-only option template at
+  `/etc/mysql/xbkeeper.cnf` (root-owned 0600); authentication and any actual
+  credentials remain separately managed. An unset user may use client defaults.
 - Preserve the current package-owned systemd units under `/usr/lib/systemd/system`;
   change only ExecStart's config path to `.toml`. Existing `/etc/systemd` full-unit
   overrides can shadow that change and must be reviewed separately.

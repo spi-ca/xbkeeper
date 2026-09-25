@@ -299,7 +299,7 @@ func TestHashFailurePreservesStage(t *testing.T) {
 			entries, _ := os.ReadDir(f.c.BackupDir)
 			found := false
 			for _, entry := range entries {
-				if strings.HasPrefix(entry.Name(), ".inprogress-") {
+				if strings.HasPrefix(entry.Name(), "inprogress-") || strings.HasPrefix(entry.Name(), ".inprogress-") {
 					found = true
 					if _, e := os.Stat(filepath.Join(f.c.BackupDir, entry.Name(), "xbkeeper.json")); e != nil {
 						t.Fatal(e)

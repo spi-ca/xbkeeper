@@ -1,6 +1,7 @@
 [Unit]
 Description=Create and prepare a local full MySQL backup with xbkeeper
 After=mysqld.service
+RequiresMountsFor=/var/backups/xtrabackup
 
 [Service]
 Type=oneshot

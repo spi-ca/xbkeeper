@@ -38,7 +38,18 @@ func phaseError(phase string, err error) error {
 	reason := "operation failed"
 	switch {
 	case phase == "config":
-		reason = "invalid config schema, path or permissions"
+		switch {
+		case strings.Contains(err.Error(), "config file missing"):
+			reason = "config file missing"
+		case strings.Contains(err.Error(), "unsafe config file"), strings.Contains(err.Error(), "config file unreadable"):
+			reason = "unsafe or unreadable config file permissions or path"
+		case strings.Contains(err.Error(), "backup directory"):
+			reason = "unsafe backup directory path, ownership or permissions"
+		default:
+			reason = "invalid config TOML, keys or schema"
+		}
+	case strings.Contains(err.Error(), "backup directory initialization sync failed"):
+		reason = "backup directory initialization sync failed; backup not started"
 	case phase == "lock", errors.Is(err, syscall.EWOULDBLOCK), strings.Contains(err.Error(), "lock unavailable"):
 		reason = "backup lock unavailable"
 	case strings.Contains(err.Error(), "insufficient free space"):
@@ -64,16 +75,20 @@ func phaseError(phase string, err error) error {
 	case phase == "durability":
 		reason = "file or directory sync failed; retention skipped"
 	case phase == "validation":
-		reason = "invalid backup, missing root or unsafe path"
+		reason = "invalid backup or unsafe path"
 	case phase == "version", phase == "backup", phase == "prepare":
 		reason = "xtrabackup execution failed"
 	}
+	var exit *childExit
+	if errors.As(err, &exit) {
+		return fmt.Errorf("%s: %s (exit code %d)", phase, reason, exit.code)
+	}
 	return fmt.Errorf("%s: %s", phase, reason)
 }
-func backup(ctx context.Context, c config, out io.Writer, events *slog.Logger) error {
+func backup(ctx context.Context, c config, out io.Writer, events *slog.Logger, verbose bool) error {
 	// Single-purpose CLI: process-global umask also applies to xtrabackup.
 	syscall.Umask(0077)
-	root, err := os.OpenRoot(c.BackupDir)
+	root, err := openBackupRoot(ctx, c.BackupDir)
 	if err != nil {
 		return phaseError("validation", err)
 	}
@@ -101,7 +116,7 @@ func backup(ctx context.Context, c config, out io.Writer, events *slog.Logger) e
 		return phaseError("validation", err)
 	}
 	stamp := now().UTC().Format("20060102T150405Z")
-	stage := ".inprogress-" + stamp + "-" + id
+	stage := "inprogress-" + stamp + "-" + id
 	completed := "backup-" + stamp + "-" + id
 	if err = root.Mkdir(stage, 0700); err != nil {
 		return phaseError("validation", err)
@@ -128,12 +143,23 @@ func backup(ctx context.Context, c config, out io.Writer, events *slog.Logger) e
 			_ = root.Remove(logName)
 		}
 	}()
-	log := &limitedWriter{w: f, left: maxLog}
+	log := &commandTail{file: f}
+	var budget *verboseBudget
+	if verbose {
+		budget = &verboseBudget{remaining: maxVerboseOutput, logger: events}
+	}
 	started := now().UTC()
 	execPhase := func(label string, args []string, output io.Writer) error {
 		begin := time.Now()
 		events.Info("phase start", "backup_id", completed, "phase", label)
-		err := runChild(ctx, c.Xtrabackup, args, output)
+		stdout, stderr, flush := childOutputs(output, budget, label)
+		err := runChildStreams(ctx, c.Xtrabackup, args, stdout, stderr)
+		// An uncertain inherited pipe may still be copied by os/exec; do not
+		// touch its line buffers while that copier could still be running.
+		var uncertain *containmentUncertain
+		if !errors.As(err, &uncertain) {
+			flush()
+		}
 		events.Info("phase end", "backup_id", completed, "phase", label, "duration", time.Since(begin).String(), "ok", err == nil)
 		return phaseError(label, err)
 	}
@@ -157,7 +183,7 @@ func backup(ctx context.Context, c config, out io.Writer, events *slog.Logger) e
 	if err != nil {
 		var uncertain *containmentUncertain
 		preserveStage = errors.As(err, &uncertain)
-		if saveErr := saveFailure(root, f); saveErr != nil {
+		if saveErr := saveFailure(root, log); saveErr != nil {
 			return fmt.Errorf("%w; failure log unavailable", err)
 		}
 		return err
@@ -256,16 +282,10 @@ func backup(ctx context.Context, c config, out io.Writer, events *slog.Logger) e
 	_, err = fmt.Fprintln(out, completed)
 	return err
 }
-func saveFailure(root *os.Root, log *os.File) error {
-	if _, err := log.Seek(0, 0); err != nil {
-		return err
-	}
-	b, err := io.ReadAll(io.LimitReader(log, maxLog))
+func saveFailure(root *os.Root, log *commandTail) error {
+	b, err := log.Bytes()
 	if err != nil {
 		return err
-	}
-	if len(b) > maxLog {
-		b = b[:maxLog]
 	}
 	// Never overwrite a symlink or special file, including one planted by an operator.
 	fi, err := root.Lstat(".last-failure.log")

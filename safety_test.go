@@ -116,7 +116,7 @@ func TestDurabilityBoundary(t *testing.T) {
 				t.Fatal(err)
 			}
 			if point == "stage" {
-				if !strings.Contains(s, ".inprogress-") {
+				if !strings.Contains(s, "inprogress-") {
 					t.Fatal("stage not preserved", s)
 				}
 				if _, err := invoke(t, f, "backup"); err == nil || !strings.Contains(err.Error(), "incomplete staging") {
@@ -130,6 +130,12 @@ func TestDurabilityBoundary(t *testing.T) {
 }
 
 func TestInspectionFailureQuarantinesAndReleasesLock(t *testing.T) {
+	for name, verbose := range map[string]bool{"default": false, "verbose": true} {
+		t.Run(name, func(t *testing.T) { testInspectionFailureQuarantinesAndReleasesLock(t, verbose) })
+	}
+}
+
+func testInspectionFailureQuarantinesAndReleasesLock(t *testing.T, verbose bool) {
 	f := setup(t)
 	mark(t, f, "sleep")
 	prev := inspectGroup
@@ -146,7 +152,11 @@ func TestInspectionFailureQuarantinesAndReleasesLock(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { var b bytes.Buffer; done <- run(ctx, []string{"backup", "--config", f.file}, &b) }()
+	args := []string{"backup", "--config", f.file}
+	if verbose {
+		args = append(args, "--verbose")
+	}
+	go func() { var b bytes.Buffer; done <- run(ctx, args, &b) }()
 	deadline := time.After(5 * time.Second)
 	for {
 		if _, err := os.Stat(filepath.Join(f.c.BackupDir, "ready")); err == nil {
@@ -180,7 +190,7 @@ func TestInspectionFailureQuarantinesAndReleasesLock(t *testing.T) {
 	}
 	lk.Close()
 	s, err := invoke(t, f, "status")
-	if err != nil || !strings.Contains(s, ".inprogress-") {
+	if err != nil || !strings.Contains(s, "inprogress-") {
 		t.Fatalf("stage not quarantined: %v %s", err, s)
 	}
 	_, err = invoke(t, f, "backup")

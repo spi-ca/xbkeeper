@@ -4,13 +4,17 @@ This is a local source-archive package, not an AUR publication or remote release
 The package installs `/usr/bin/xbkeeper`, its BSD-3-Clause license, the linked
 TOML parser's MIT license, the generic default config at
 `/etc/xbkeeper/xbkeeper.toml` (root-owned file mode 0600 in a mode 0700
-`/etc/xbkeeper` directory), a copy under `/usr/share/doc/xbkeeper/examples/`,
+`/etc/xbkeeper` directory), a comment-only MySQL option template at
+`/etc/mysql/xbkeeper.cnf` (file 0600; shared parent directory 0755), copies
+under `/usr/share/doc/xbkeeper/examples/` (mode 0644),
 relevant documentation and the canonical `xbkeeper.service`/`xbkeeper.timer`
-(mode 0644) in `/usr/lib/systemd/system`. Pacman's `backup` entry preserves
-modified config during upgrades (new defaults may arrive as `.pacnew`); compare
-these manually. It does not create a DB account, install credentials, provision
-a backup directory, enable/start a timer, run an install hook or delete backups
-on removal. Host-specific config values, prerequisites and deployment instructions
+(mode 0644) in `/usr/lib/systemd/system`, plus a mode 0644 tmpfiles rule under
+`/usr/lib/tmpfiles.d` for the default backup root. Pacman's `backup` entry preserves
+modified TOML and MySQL option files during upgrades (new defaults may arrive
+as `.pacnew`); compare these manually. It does not create a DB account, install
+active credentials, enable/start a timer, run an install hook or delete backups
+on removal. System tmpfiles boot/package hooks may create the default root if
+absent; the package payload itself contains no backup directory. Host-specific config values, prerequisites and deployment instructions
 remain in `~/Codebase/kubernetes-manifests/03-arch-systemd/xbkeeper/`.
 The [unit migration plan](../../docs/systemd-migration.md) records the handoff.
 
@@ -41,12 +45,12 @@ install (`-i`) is used.
 `make dist` uses deterministic archive timestamps, owner IDs, regular-file modes
 (0644) and gzip headers, and copies the archive next to `PKGBUILD` for makepkg's
 local-source lookup. Source file permissions/umask do not change its checksum.
-The canonical pinned version is `v20260926-2`: the release tag, Makefile
+The canonical pinned version is `v20260926-4`: the release tag, Makefile
 `VERSION`, source archive directory/name and binary `version` output use the
 full `vYYYYMMDD-N` string. Arch splits it into `pkgver=20260926` and
-`pkgrel=2`. A further release on the same day uses `v20260926-3`,
-`pkgver=20260926`, `pkgrel=3` and a **new matching source archive** named
-`xbkeeper-v20260926-3.tar.gz`; never bump only `pkgrel` while reusing the
+`pkgrel=4`. A further release on the same day uses `v20260926-5`,
+`pkgver=20260926`, `pkgrel=5` and a **new matching source archive** named
+`xbkeeper-v20260926-5.tar.gz`; never bump only `pkgrel` while reusing the
 previous source version/archive. Versions are pinned, not generated from the
 build date. After intentionally changing source files, update all version
 fields, regenerate the archive, review `makepkg -g`, update `sha256sums` in
@@ -70,9 +74,9 @@ It does not prove that dependency resolution works on a fresh Arch system.
 Normal package builds should check dependencies as above.
 
 After building, inspect the package file list and `.PKGINFO`, including the
-`/usr/lib/systemd/system` units, the private `/etc/xbkeeper` config permissions
-and the `backup` entry; check the extracted binary's `version` command
-without running `backup`. Keep package archives out of Git. Package creation
+`/usr/lib/systemd/system` units, the tmpfiles rule, the private `/etc/xbkeeper` config permissions
+and both `backup` entries and the `/etc/mysql` template/file modes; check the
+extracted binary's `version` command without running `backup`. Keep package archives out of Git. Package creation
 does not establish real backup or restore correctness.
 
 ## Separate host migration and activation
@@ -81,6 +85,9 @@ The service runs as root with a private umask, reads
 `/etc/xbkeeper/xbkeeper.toml`, and can write only to `/var/backups/xtrabackup`
 under its filesystem sandbox. A custom backup root needs an explicit, reviewed
 systemd drop-in that resets `ReadWritePaths=` before adding the new directory.
+`RequiresMountsFor=/var/backups/xtrabackup` orders configured mounts, but cannot
+detect a missing unconfigured dedicated disk: add an explicit mount assertion
+and update the mount requirement in a reviewed drop-in for that case/custom roots.
 `After=mysqld.service` orders the service; it neither starts nor restarts MySQL.
 The timer schedules 03:00 host local time with `Persistent=true`: enabling it
 after a missed run can trigger a backup immediately. Neither package build nor
@@ -88,10 +95,18 @@ installation authorizes enabling or running it.
 
 Before any separately approved host install/upgrade, inspect any existing
 `/etc/xbkeeper/xbkeeper.toml` and preserve operator changes. Review the packaged
-default's generic MySQL paths against the host; the config is not a credential
-file and a separately managed private MySQL option file is required. Create the
-backup directory explicitly with root ownership and mode 0700 only after
-reviewing capacity, destination and retention. Inspect whether the timer
+default's generic MySQL paths against the host; the TOML config is not a
+credential file. Review any existing `/etc/mysql/xbkeeper.cnf` and preserve
+operator changes before upgrading. The packaged private option template has no
+active user/password: an unset user may use MySQL client defaults, but root OS
+identity does not prove socket authentication. Independently confirm effective
+DB authentication and privileges, or provision a dedicated backup user and
+configure its credentials separately. Review capacity, destination and retention before initializing backups. The
+packaged colon-prefixed tmpfiles rule creates the default backup root if absent
+at boot/package-hook time, without changing existing directory attributes.
+`backup` alone can create missing root components under trusted ancestors (UID
+owner, mode 0700); existing unsafe directories fail validation, never repaired.
+`status` and `verify` never initialize the root. Inspect whether the timer
 is active/enabled and whether a backup is running; agree how an existing
 schedule is suspended/resumed without interrupting a backup. Inspect and safely
 back up any existing `/etc/systemd/system/xbkeeper.service` or `.timer`:

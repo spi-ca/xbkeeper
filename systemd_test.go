@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,8 +73,9 @@ func TestPackagedServiceContract(t *testing.T) {
 		t.Fatalf("service sections = %v; want only Unit and Service", unit)
 	}
 	assertUnitSection(t, unit, "Unit", map[string]string{
-		"Description": "Create and prepare a local full MySQL backup with xbkeeper",
-		"After":       "mysqld.service", // ordering only: no Wants/Requires or condition-based skip
+		"Description":       "Create and prepare a local full MySQL backup with xbkeeper",
+		"After":             "mysqld.service", // ordering only: no DB dependency or condition-based skip
+		"RequiresMountsFor": "/var/backups/xtrabackup",
 	})
 	assertUnitSection(t, unit, "Service", map[string]string{
 		"Type": "oneshot",
@@ -85,6 +87,24 @@ func TestPackagedServiceContract(t *testing.T) {
 		"ProtectHome":    "true", "PrivateTmp": "true", "NoNewPrivileges": "true",
 		"RestrictAddressFamilies": "AF_UNIX",
 	})
+}
+
+func TestPackagedTmpfilesContract(t *testing.T) {
+	b, err := os.ReadFile("packaging/tmpfiles/xbkeeper.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(lines) != 2 || !strings.HasPrefix(lines[0], "#") || lines[1] != "d /var/backups/xtrabackup :0700 :root :root - -" {
+		t.Fatalf("tmpfiles must create only absent default root without repairing existing attributes: %q", b)
+	}
+	makefile, err := os.ReadFile("Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(makefile), "packaging/tmpfiles/xbkeeper.conf") {
+		t.Fatal("source archive omits tmpfiles")
+	}
 }
 
 func TestPackagedTimerContract(t *testing.T) {
@@ -112,11 +132,11 @@ func TestPackageInstallsUnitsWithoutActivationOrProvisioning(t *testing.T) {
 		t.Fatal(err)
 	}
 	pkg := string(content)
-	if !strings.Contains(pkg, "pkgver=20260926\npkgrel=2\n") {
-		t.Error("package must be version 20260926, release 2")
+	if !strings.Contains(pkg, "pkgver=20260926\npkgrel=4\n") {
+		t.Error("package must be version 20260926, release 3")
 	}
-	if strings.Count(pkg, "backup=(") != 1 || !strings.Contains(pkg, "\nbackup=('etc/xbkeeper/xbkeeper.toml')\n") {
-		t.Error("package must protect only the operator config with pacman backup")
+	if strings.Count(pkg, "backup=(") != 1 || !strings.Contains(pkg, "\nbackup=('etc/xbkeeper/xbkeeper.toml' 'etc/mysql/xbkeeper.cnf')\n") {
+		t.Error("package must protect both operator config and MySQL option template with pacman backup")
 	}
 	if strings.Contains(pkg, "install=") || strings.Contains(pkg, ".install") {
 		t.Error("package must not use an install hook")
@@ -125,8 +145,8 @@ func TestPackageInstallsUnitsWithoutActivationOrProvisioning(t *testing.T) {
 	if !found {
 		t.Fatal("missing package() body")
 	}
-	// Each payload install is explicit. Only the private config parent directory
-	// is created; no credentials, backup directory, hooks or unit activation.
+	// Each payload install is explicit. No active credentials, backup directory,
+	// hooks or unit activation are installed.
 	want := `  cd "${pkgname}-v${pkgver}-${pkgrel}"
   install -Dm755 xbkeeper "${pkgdir}/usr/bin/xbkeeper"
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
@@ -136,13 +156,17 @@ func TestPackageInstallsUnitsWithoutActivationOrProvisioning(t *testing.T) {
   install -Dm644 docs/systemd-migration.md "${pkgdir}/usr/share/doc/${pkgname}/docs/systemd-migration.md"
   install -Dm644 docs/toml-migration.md "${pkgdir}/usr/share/doc/${pkgname}/docs/toml-migration.md"
   install -Dm644 examples/xbkeeper.toml "${pkgdir}/usr/share/doc/${pkgname}/examples/xbkeeper.toml"
+  install -Dm644 examples/xbkeeper.cnf "${pkgdir}/usr/share/doc/${pkgname}/examples/xbkeeper.cnf"
   install -Dm644 examples/README.md "${pkgdir}/usr/share/doc/${pkgname}/examples/README.md"
   install -dm700 "${pkgdir}/etc/xbkeeper"
   install -m600 examples/xbkeeper.toml "${pkgdir}/etc/xbkeeper/xbkeeper.toml"
+  install -dm755 "${pkgdir}/etc/mysql"
+  install -m600 examples/xbkeeper.cnf "${pkgdir}/etc/mysql/xbkeeper.cnf"
   install -Dm644 packaging/arch/README.md \
     "${pkgdir}/usr/share/doc/${pkgname}/packaging/arch/README.md"
   install -Dm644 packaging/systemd/xbkeeper.service "${pkgdir}/usr/lib/systemd/system/xbkeeper.service"
   install -Dm644 packaging/systemd/xbkeeper.timer "${pkgdir}/usr/lib/systemd/system/xbkeeper.timer"
+  install -Dm644 packaging/tmpfiles/xbkeeper.conf "${pkgdir}/usr/lib/tmpfiles.d/xbkeeper.conf"
 }
 `
 	if body != want {
@@ -183,14 +207,14 @@ func TestPackageConfigPayloadModes(t *testing.T) {
 	for _, name := range []string{
 		"xbkeeper", "LICENSE", "LICENSES/go-toml-MIT.txt", "README.md",
 		"docs/integrity.md", "docs/systemd-migration.md", "docs/toml-migration.md",
-		"examples/xbkeeper.toml", "examples/README.md", "packaging/arch/README.md",
-		"packaging/systemd/xbkeeper.service", "packaging/systemd/xbkeeper.timer",
+		"examples/xbkeeper.toml", "examples/xbkeeper.cnf", "examples/README.md", "packaging/arch/README.md",
+		"packaging/systemd/xbkeeper.service", "packaging/systemd/xbkeeper.timer", "packaging/tmpfiles/xbkeeper.conf",
 	} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(source, name)), 0700); err != nil {
 			t.Fatal(err)
 		}
 		contents := []byte("fixture\n")
-		if name == "examples/xbkeeper.toml" {
+		if name == "examples/xbkeeper.toml" || name == "examples/xbkeeper.cnf" {
 			contents, err = os.ReadFile(name)
 			if err != nil {
 				t.Fatal(err)
@@ -215,9 +239,13 @@ func TestPackageConfigPayloadModes(t *testing.T) {
 	}{
 		{parent, 0700},
 		{config, 0600},
+		{filepath.Join(pkgdir, "etc/mysql"), 0755},
+		{filepath.Join(pkgdir, "etc/mysql/xbkeeper.cnf"), 0600},
+		{filepath.Join(pkgdir, "usr/share/doc/xbkeeper/examples/xbkeeper.cnf"), 0644},
 		{filepath.Join(pkgdir, "usr/share/doc/xbkeeper/examples/xbkeeper.toml"), 0644},
 		{filepath.Join(pkgdir, "usr/lib/systemd/system/xbkeeper.service"), 0644},
 		{filepath.Join(pkgdir, "usr/lib/systemd/system/xbkeeper.timer"), 0644},
+		{filepath.Join(pkgdir, "usr/lib/tmpfiles.d/xbkeeper.conf"), 0644},
 	} {
 		info, err := os.Stat(tc.path)
 		if err != nil {
@@ -238,10 +266,57 @@ func TestPackageConfigPayloadModes(t *testing.T) {
 	if string(defaultConfig) != string(docConfig) {
 		t.Error("packaged default differs from documentation example")
 	}
-	for _, name := range []string{"etc/mysql", "var/backups", "etc/systemd", "etc/xbkeeper/xbkeeper.install"} {
+	mysqlTemplate, err := os.ReadFile(filepath.Join(pkgdir, "etc/mysql/xbkeeper.cnf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mysqlDoc, err := os.ReadFile(filepath.Join(pkgdir, "usr/share/doc/xbkeeper/examples/xbkeeper.cnf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(mysqlTemplate) != string(mysqlDoc) {
+		t.Error("packaged MySQL template differs from documentation example")
+	}
+	mysqlEntries, err := os.ReadDir(filepath.Join(pkgdir, "etc/mysql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mysqlEntries) != 1 || mysqlEntries[0].Name() != "xbkeeper.cnf" {
+		t.Errorf("unexpected /etc/mysql payload: %v", mysqlEntries)
+	}
+	for _, name := range []string{"var/backups", "etc/systemd", "etc/xbkeeper/xbkeeper.install"} {
 		if _, err := os.Lstat(filepath.Join(pkgdir, name)); !os.IsNotExist(err) {
 			t.Errorf("unexpected package payload at %s: %v", name, err)
 		}
+	}
+}
+
+func TestPackagedMySQLOptionTemplateHasNoActiveSettings(t *testing.T) {
+	content, err := os.ReadFile("examples/xbkeeper.cnf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	section := false
+	user, password := false, false
+	for _, raw := range bytes.Split(content, []byte("\n")) {
+		line := strings.TrimSpace(string(raw))
+		if strings.HasPrefix(line, "#") || line == "" {
+			if strings.HasPrefix(line, "# user=") {
+				user = line == "# user=YOUR_BACKUP_USER"
+			}
+			if strings.HasPrefix(line, "# password=") {
+				password = line == "# password=YOUR_BACKUP_PASSWORD"
+			}
+			continue
+		}
+		if line == "[xtrabackup]" && !section {
+			section = true
+			continue
+		}
+		t.Errorf("unexpected active MySQL option: %q", line)
+	}
+	if !section || !user || !password {
+		t.Error("MySQL template must have [xtrabackup] and commented user/password placeholders")
 	}
 }
 

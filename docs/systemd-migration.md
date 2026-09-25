@@ -12,8 +12,11 @@ authorized by this change.
   `packaging/systemd/xbkeeper.timer`; Arch packaging installs them mode 0644 under
   `/usr/lib/systemd/system`. Package the generic default under `/etc/xbkeeper`
   (directory 0700, config 0600) with pacman backup protection for operator edits.
-  No install hooks, credentials, backup-directory provisioning, enabling or
-  starting units.
+  The later package update adds a private, comment-only MySQL option template
+  with pacman backup protection; no active credentials, install hooks,
+  automatic activation. A colon-prefixed tmpfiles rule provisions the default
+  backup root only if absent (without repairing existing attributes); `backup`
+  may also safely initialize a missing configured root.
 - Preserve the existing oneshot CLI, root identity, private umask, six-hour run
   timeout, control-group kill, sandbox and AF_UNIX-only connection policy.
 - Preserve daily 03:00 host-local scheduling and Persistent=true. Enabling after
@@ -23,6 +26,9 @@ authorized by this change.
   `/var/backups/xtrabackup`; custom destinations require an explicit
   drop-in resetting ReadWritePaths before adding the new path. Do not weaken
   filesystem protection or auto-create credentials/data directories.
+- RequiresMountsFor=/var/backups/xtrabackup orders configured mounts before the
+  unit; it cannot detect an absent unconfigured mount. Operators must add an
+  explicit mount assertion/drop-in for dedicated disks or custom roots.
 - After=mysqld.service is ordering only. Do not add Wants/Requires or restart DB
   services. No ConditionPathExists to turn missing prerequisites into a skip.
 - Host-specific TOML values, authentication, capacity, backup/restore validation
@@ -44,7 +50,7 @@ authorized by this change.
 4. This records the prior unit-migration handoff: preserve the completed 0.2.0
    integrity implementation and never rebuild from the stale 0.1 archive. The
    subsequent TOML migration initially bumped the source to 0.3.0; the current
-   pinned source version is v20260926-2. Keep its archive, checksum and .SRCINFO
+   pinned source version is v20260926-4. Keep its archive, checksum and .SRCINFO
    synchronized whenever the source snapshot changes.
    Verify archive contents include integrity sources/tests, new units, TOML
    examples and module sums. Never bypass checksums or imply a release occurred.

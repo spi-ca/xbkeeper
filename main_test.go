@@ -58,6 +58,7 @@ if [ "$#" -eq 5 ]; then
   [ "$2" = --backup ] || exit 42
   case "$3" in --target-dir=*) d=${3#--target-dir=} ;; *) exit 43;; esac
   [ "$4" = "--datadir=$base/data" ] && [ "$5" = "--socket=$base/mysql.sock" ] || exit 50
+  case "$(basename "$d")" in .*) echo hidden-target >&2; exit 53;; esac
   if [ -e "$base/backups/prefill-target" ]; then echo payload > "$d/foreign"; fi
   [ -z "$(ls -A "$d")" ] || exit 52
   if [ -e "$base/backups/fail-backup" ]; then echo 'private fake error password=secret' >&2; exit 44; fi
@@ -72,6 +73,7 @@ if [ "$#" -eq 3 ] && [ "$1" = --no-defaults ] && [ "$2" = --prepare ]; then
     echo ready > "$base/backups/ready"
     wait
   fi
+  case "$(basename "$d")" in .*) echo hidden-target >&2; exit 53;; esac
   if [ -e "$base/backups/fail-prepare" ]; then echo 'private fake error password=secret' >&2; exit 47; fi
   if [ -e "$base/backups/bad-checkpoint" ]; then echo 'backup_type = incremental' > "$d/xtrabackup_checkpoints"; exit 0; fi
   echo 'backup_type = full-prepared' > "$d/xtrabackup_checkpoints"
@@ -104,6 +106,12 @@ func invoke(t *testing.T, f fixture, cmd string) (string, error) {
 	err := run(context.Background(), []string{cmd, "--config", f.file}, &b)
 	return b.String(), err
 }
+func invokeStatusJSON(t *testing.T, f fixture) (string, error) {
+	t.Helper()
+	var b bytes.Buffer
+	err := run(context.Background(), []string{"status", "--json", "--config", f.file}, &b)
+	return b.String(), err
+}
 func mark(t *testing.T, f fixture, name string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(f.c.BackupDir, name), nil, 0600); err != nil {
@@ -123,7 +131,7 @@ func TestBackupRetentionAndStatus(t *testing.T) {
 	if one == two {
 		t.Fatal("duplicate name")
 	}
-	s, err := invoke(t, f, "status")
+	s, err := invokeStatusJSON(t, f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,6 +141,10 @@ func TestBackupRetentionAndStatus(t *testing.T) {
 	}
 	if len(got.Backups) != 1 || got.Backups[0] != strings.TrimSpace(two) || got.LastSuccess != got.Backups[0] || len(got.Incomplete) != 0 {
 		t.Fatalf("status: %+v", got)
+	}
+	human, err := invoke(t, f, "status")
+	if err != nil || !strings.Contains(human, "Backups (1):\n  "+got.Backups[0]) || !strings.Contains(human, "Last success: "+got.LastSuccess) {
+		t.Fatalf("human status: %q %v", human, err)
 	}
 	if _, err := os.Stat(filepath.Join(f.c.BackupDir, strings.TrimSpace(one))); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("old backup retained: %v", err)
@@ -169,7 +181,7 @@ func TestFailuresDoNotPrune(t *testing.T) {
 			}
 			entries, _ := os.ReadDir(f.c.BackupDir)
 			for _, e := range entries {
-				if strings.HasPrefix(e.Name(), ".inprogress-") {
+				if strings.HasPrefix(e.Name(), "inprogress-") || strings.HasPrefix(e.Name(), ".inprogress-") {
 					t.Fatal("staging left behind")
 				}
 			}
@@ -269,7 +281,7 @@ func TestIncompleteAndUnmanagedAreNotPruned(t *testing.T) {
 	if _, err := invoke(t, f, "backup"); err == nil || !strings.Contains(err.Error(), "incomplete staging") {
 		t.Fatalf("orphan did not block backup: %v", err)
 	}
-	s, err := invoke(t, f, "status")
+	s, err := invokeStatusJSON(t, f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,12 +330,22 @@ func TestSymlinkAndLock(t *testing.T) {
 	}
 }
 func TestCancellation(t *testing.T) {
+	for name, verbose := range map[string]bool{"default": false, "verbose": true} {
+		t.Run(name, func(t *testing.T) { testCancellation(t, verbose) })
+	}
+}
+
+func testCancellation(t *testing.T, verbose bool) {
 	f := setup(t)
 	mark(t, f, "sleep")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { var b bytes.Buffer; done <- run(ctx, []string{"backup", "--config", f.file}, &b) }()
+	args := []string{"backup", "--config", f.file}
+	if verbose {
+		args = append(args, "--verbose")
+	}
+	go func() { var b bytes.Buffer; done <- run(ctx, args, &b) }()
 	deadline := time.After(5 * time.Second)
 	for {
 		if _, err := os.Stat(filepath.Join(f.c.BackupDir, "ready")); err == nil {
@@ -374,6 +396,69 @@ func TestCancellation(t *testing.T) {
 	}
 	lk.Close()
 }
+func TestCommandConfigSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name, cmd, path, backup string
+		args                    []string
+		valid                   bool
+	}{
+		{"backup default", "backup", defaultConfigPath, "", []string{"backup"}, true},
+		{"status default", "status", defaultConfigPath, "", []string{"status"}, true},
+		{"status json", "status", defaultConfigPath, "", []string{"status", "--json"}, true},
+		{"backup verbose", "backup", defaultConfigPath, "", []string{"backup", "--verbose"}, true},
+		{"backup json rejected", "", "", "", []string{"backup", "--json"}, false},
+		{"status verbose rejected", "", "", "", []string{"status", "--verbose"}, false},
+		{"verify default", "verify", defaultConfigPath, "", []string{"verify"}, true},
+		{"verify selected default", "verify", defaultConfigPath, "backup-20200101T000000Z-0000000000000000", []string{"verify", "--backup", "backup-20200101T000000Z-0000000000000000"}, true},
+		{"override", "backup", "/tmp/config.toml", "", []string{"backup", "--config", "/tmp/config.toml"}, true},
+		{"verify override", "verify", "/tmp/config.toml", "chosen", []string{"verify", "--config=/tmp/config.toml", "--backup", "chosen"}, true},
+		{"explicit empty", "", "", "", []string{"status", "--config="}, false},
+		{"missing argument", "", "", "", []string{"backup", "--config"}, false},
+		{"unknown flag", "", "", "", []string{"status", "--unknown"}, false},
+		{"wrong command flag", "", "", "", []string{"status", "--backup", "name"}, false},
+		{"positional", "", "", "", []string{"verify", "name"}, false},
+		{"trailing positional", "", "", "", []string{"backup", "--config", "/tmp/config.toml", "extra"}, false},
+		{"unknown command", "", "", "", []string{"unknown"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd, path, backup, _, err := parseOptions(tc.args)
+			if (err == nil) != tc.valid {
+				t.Fatalf("parse error = %v, valid = %v", err, tc.valid)
+			}
+			if tc.valid && (cmd != tc.cmd || path != tc.path || backup != tc.backup) {
+				t.Fatalf("parse = %q %q %q, want %q %q %q", cmd, path, backup, tc.cmd, tc.path, tc.backup)
+			}
+		})
+	}
+}
+
+func TestMissingOrUnsafeConfigFailsWithoutCreatingIt(t *testing.T) {
+	f := setup(t)
+	missing := filepath.Join(f.base, "missing.toml")
+	for _, command := range []string{"backup", "status", "verify"} {
+		var out bytes.Buffer
+		err := run(context.Background(), []string{command, "--config", missing}, &out)
+		if err == nil || err.Error() != "config: config file missing" {
+			t.Fatalf("%s accepted missing config: %v", command, err)
+		}
+		if _, err := os.Lstat(missing); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s created missing config: %v", command, err)
+		}
+		if out.Len() != 0 {
+			t.Fatalf("%s wrote output with missing config: %q", command, out.String())
+		}
+	}
+	if err := os.Chmod(f.file, 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"backup", "status", "verify"} {
+		var out bytes.Buffer
+		if err := run(context.Background(), []string{command, "--config", f.file}, &out); err == nil || err.Error() != "config: unsafe or unreadable config file permissions or path" {
+			t.Fatalf("%s accepted unsafe config: %v", command, err)
+		}
+	}
+}
+
 func TestVersion(t *testing.T) {
 	var b bytes.Buffer
 	if err := run(context.Background(), []string{"version"}, &b); err != nil || strings.TrimSpace(b.String()) != Version {
