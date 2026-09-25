@@ -1,7 +1,7 @@
 # TOML configuration and packaged examples
 
 Status: configuration migration originally implemented at version 0.3.0;
-the current pinned source version is v20260926-5. Independent
+the current pinned source version is v20260926-6. Independent
 design and implementation reviews completed; review findings required exact-case
 key checks and complete-fixture negative/escape tests. Packaging validation
 requirements are recorded below.
@@ -28,7 +28,7 @@ renaming JSON content to `.toml` is not migration.
   Changing a suffix is not conversion: existing JSON content needs explicit
   operator migration. The original plan called for tool version 0.3.0 and Arch
   release 1; the current version policy supersedes that numbering with
-  `v20260926-5` (`pkgver=20260926`, `pkgrel=5`).
+  `v20260926-6` (`pkgver=20260926`, `pkgrel=6`).
 - `xbkeeper.json` INSIDE a backup, metadata versions 1/2, `SHA256SUMS`, and JSON
   the command output now uses a common `{command,ok,data,error}` envelope with `--json`; status and verify payload fields remain inside `data`. All commands default to human-readable results. Keep strict JSON checks for metadata.
   Never bulk-replace every `.json` reference or alter existing backup artifacts.

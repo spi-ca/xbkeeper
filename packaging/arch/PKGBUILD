@@ -1,22 +1,25 @@
-pkgname=xbkeeper
+pkgname=('xbkeeper' 'xbkeeper-debug')
 pkgver=20260926
-pkgrel=5
+pkgrel=6
 pkgdesc='Small local full-backup and retention manager for Percona XtraBackup'
 arch=('x86_64' 'aarch64')
 license=('BSD-3-Clause' 'MIT')
-depends=('xtrabackup')
-makedepends=('go>=1.24')
-options=('!lto')
-backup=('etc/xbkeeper/xbkeeper.toml' 'etc/mysql/xbkeeper.cnf')
+makedepends=('go>=1.24' 'binutils')
+# Debug files and the GNU debuglink are created explicitly below. Disable
+# makepkg's automatic debug package/stripping for both split packages.
+options=('!strip' '!debug' '!lto')
 # Local source distribution generated with `make dist` at the repository root.
 # No public upstream URL is assumed before this repository is published.
 source=("${pkgname}-v${pkgver}-${pkgrel}.tar.gz")
-sha256sums=('cf218032bfdf21330f09aaca59e4aef0a98c43b72b39660cfc253422d641093d')
+sha256sums=('1d2ce29d4b2a2465cb44918bc28cd6dbd4011279235d8006e68248f047e5cd41')
 
 build() {
   cd "${pkgname}-v${pkgver}-${pkgrel}"
   CGO_ENABLED=0 go build -trimpath -buildvcs=false \
     -ldflags "-X main.Version=v${pkgver}-${pkgrel}" -o xbkeeper .
+  objcopy --only-keep-debug xbkeeper xbkeeper.debug
+  strip --strip-debug xbkeeper
+  objcopy --add-gnu-debuglink=xbkeeper.debug xbkeeper
 }
 
 check() {
@@ -24,8 +27,10 @@ check() {
   go test ./...
 }
 
-package() {
-  cd "${pkgname}-v${pkgver}-${pkgrel}"
+package_xbkeeper() {
+  depends=('xtrabackup')
+  backup=('etc/xbkeeper/xbkeeper.toml' 'etc/mysql/xbkeeper.cnf')
+  cd "${pkgbase}-v${pkgver}-${pkgrel}"
   install -Dm755 xbkeeper "${pkgdir}/usr/bin/xbkeeper"
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
   install -Dm644 LICENSES/go-toml-MIT.txt "${pkgdir}/usr/share/licenses/${pkgname}/go-toml-MIT.txt"
@@ -45,4 +50,13 @@ package() {
   install -Dm644 packaging/systemd/xbkeeper.service "${pkgdir}/usr/lib/systemd/system/xbkeeper.service"
   install -Dm644 packaging/systemd/xbkeeper.timer "${pkgdir}/usr/lib/systemd/system/xbkeeper.timer"
   install -Dm644 packaging/tmpfiles/xbkeeper.conf "${pkgdir}/usr/lib/tmpfiles.d/xbkeeper.conf"
+}
+
+package_xbkeeper-debug() {
+  pkgdesc='Detached debugging symbols for xbkeeper'
+  depends=("xbkeeper=${pkgver}-${pkgrel}")
+  cd "${pkgbase}-v${pkgver}-${pkgrel}"
+  install -Dm644 xbkeeper.debug "${pkgdir}/usr/lib/debug/usr/bin/xbkeeper.debug"
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  install -Dm644 LICENSES/go-toml-MIT.txt "${pkgdir}/usr/share/licenses/${pkgname}/go-toml-MIT.txt"
 }
