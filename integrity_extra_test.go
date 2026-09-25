@@ -36,7 +36,7 @@ func TestUnsupportedStageNamesPreserved(t *testing.T) {
 			entries, _ := os.ReadDir(f.c.BackupDir)
 			found := false
 			for _, entry := range entries {
-				if strings.HasPrefix(entry.Name(), ".inprogress-") {
+				if strings.HasPrefix(entry.Name(), "inprogress-") || strings.HasPrefix(entry.Name(), ".inprogress-") {
 					found = true
 				}
 			}

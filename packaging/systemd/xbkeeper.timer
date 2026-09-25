@@ -1,0 +1,10 @@
+[Unit]
+Description=Run xbkeeper daily at 03:00 host local time
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+Unit=xbkeeper.service
+
+[Install]
+WantedBy=timers.target

@@ -26,7 +26,7 @@ func TestRetentionCountsAndRollback(t *testing.T) {
 				if err != nil {
 					t.Fatal(i, err)
 				}
-				stateJSON, err := invoke(t, f, "status")
+				stateJSON, err := invokeStatusJSON(t, f)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -114,7 +114,7 @@ func TestClockRollsBackDuringPrepare(t *testing.T) {
 	if !end.Before(start) {
 		t.Fatal("clock rollback was not recorded honestly")
 	}
-	if _, err = invoke(t, f, "status"); err != nil {
+	if _, err = invokeStatusJSON(t, f); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -133,7 +133,7 @@ func TestRetentionErrorPreservesCompleted(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "retention") || strings.Contains(err.Error(), "secret") || result != "" {
 		t.Fatalf("result=%q error=%v", result, err)
 	}
-	s, err := invoke(t, f, "status")
+	s, err := invokeStatusJSON(t, f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestFailureRedactionAndNoCommandLeftovers(t *testing.T) {
 			}
 			entries, _ := os.ReadDir(f.c.BackupDir)
 			for _, e := range entries {
-				if strings.HasPrefix(e.Name(), ".command-") || strings.HasPrefix(e.Name(), ".inprogress-") || strings.HasPrefix(e.Name(), ".failure-") {
+				if strings.HasPrefix(e.Name(), ".command-") || strings.HasPrefix(e.Name(), "inprogress-") || strings.HasPrefix(e.Name(), ".inprogress-") || strings.HasPrefix(e.Name(), ".failure-") {
 					t.Fatalf("leftover: %s", e.Name())
 				}
 			}
@@ -209,7 +209,7 @@ func TestHardlinkFailsClosed(t *testing.T) {
 	if err = os.Link(filepath.Join(dir, "xbkeeper.json"), filepath.Join(f.c.BackupDir, "shared")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = invoke(t, f, "status"); err == nil {
+	if _, err = invokeStatusJSON(t, f); err == nil {
 		t.Fatal("hardlinked entry accepted")
 	}
 	if _, err = invoke(t, f, "backup"); err == nil {

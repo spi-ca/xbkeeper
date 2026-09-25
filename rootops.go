@@ -3,11 +3,110 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"syscall"
 )
+
+// Sequential tests inject parent-sync failures without changing filesystem policy.
+var syncInitializationParent = syncRoot
+
+// openBackupRoot walks from / through descriptor-relative roots. It creates only
+// missing backup-directory components, never adjusts existing attributes, and
+// returns the already-validated root descriptor to the backup caller.
+func openBackupRoot(ctx context.Context, path string) (*os.Root, error) {
+	if _, err := backupRootMissing(path); err != nil {
+		return nil, err
+	}
+	r, err := os.OpenRoot("/")
+	if err != nil {
+		return nil, err
+	}
+	cur := "/"
+	for _, part := range strings.Split(strings.TrimPrefix(path, "/"), "/") {
+		if part == "" {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			r.Close()
+			return nil, err
+		}
+		fi, err := r.Lstat(part)
+		if errors.Is(err, os.ErrNotExist) {
+			// Recheck the ancestor's ownership and write policy before mutation.
+			if err := controlledParents(filepath.Join(cur, part)); err != nil {
+				r.Close()
+				return nil, errors.New("unsafe backup directory ancestor")
+			}
+			if err = ctx.Err(); err != nil {
+				r.Close()
+				return nil, err
+			}
+			if err = r.Mkdir(part, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+				r.Close()
+				return nil, errors.New("cannot create backup directory")
+			}
+			fi, err = r.Lstat(part)
+		}
+		if err != nil || fi == nil || !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
+			r.Close()
+			return nil, errors.New("unsafe backup directory component")
+		}
+		// Existing ancestors retain their permissions. A concurrent Mkdir
+		// winner is subject to exactly the same checks as an existing entry.
+		uid, ok := owner(fi)
+		if !ok || (int(uid) != os.Geteuid() && uid != 0) ||
+			(fi.Mode().Perm()&0022 != 0 && !(uid == 0 && fi.Mode()&os.ModeSticky != 0)) {
+			r.Close()
+			return nil, errors.New("unsafe backup directory ancestor")
+		}
+		if filepath.Join(cur, part) == path && (int(uid) != os.Geteuid() || fi.Mode().Perm() != 0700) {
+			r.Close()
+			return nil, errors.New("unsafe backup directory ownership or mode")
+		}
+		next, err := r.OpenRoot(part)
+		if err == nil {
+			var opened os.FileInfo
+			opened, err = next.Stat(".")
+			if err == nil && !os.SameFile(fi, opened) {
+				err = errors.New("backup directory changed")
+			}
+			if err == nil {
+				entry, e := r.Lstat(part)
+				if e != nil || !entry.IsDir() || entry.Mode()&os.ModeSymlink != 0 || !os.SameFile(fi, entry) {
+					err = errors.New("backup directory changed")
+				}
+			}
+		}
+		if err != nil {
+			r.Close()
+			if next != nil {
+				next.Close()
+			}
+			return nil, errors.New("unsafe backup directory traversal")
+		}
+		// Persist each parent entry before backup can proceed. Sync even when
+		// the child already exists: an earlier interrupted initializer may have
+		// left the entry visible but not durable. Never repair its attributes.
+		if err := syncInitializationParent(r); err != nil {
+			r.Close()
+			next.Close()
+			return nil, errors.New("backup directory initialization sync failed")
+		}
+		r.Close()
+		r = next
+		cur = filepath.Join(cur, part)
+	}
+	if err := ctx.Err(); err != nil {
+		r.Close()
+		return nil, err
+	}
+	return r, nil
+}
 
 // Go 1.24 Root does not yet provide Rename, WriteFile or RemoveAll.
 func renameInRoot(r *os.Root, from, to string) error {

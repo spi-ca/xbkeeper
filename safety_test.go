@@ -14,15 +14,38 @@ import (
 	"time"
 )
 
-func TestStrictJSONCaseAndNoLeakedInput(t *testing.T) {
+func TestStrictTOMLCaseAndNoLeakedInput(t *testing.T) {
 	f := setup(t)
-	for _, data := range []string{`{"Keep":1,"password":"secret-value"}`, `{"keep":1,"Keep":2}`, `{"keep":1,"KEEP":2}`, `{"keep":1,"keep":2}`, `{"keep":"secret-value"}`} {
+	original, err := os.ReadFile(f.file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := invoke(t, f, "status"); err != nil {
+		t.Fatalf("baseline status: %v", err)
+	}
+	if !strings.Contains(string(original), "keep = 1\n") {
+		t.Fatal("fixture missing keep field")
+	}
+	for _, data := range []string{
+		string(original) + "Keep = 'secret-value'\n",
+		string(original) + "password = 'secret-value'\n",
+		strings.Replace(string(original), "keep = 1\n", "keep = 'secret-value'\n", 1),
+	} {
 		if err := os.WriteFile(f.file, []byte(data), 0600); err != nil {
 			t.Fatal(err)
 		}
 		_, err := invoke(t, f, "status")
 		if err == nil || strings.Contains(err.Error(), "secret-value") || !strings.Contains(err.Error(), "config") {
 			t.Fatalf("%s: %v", data, err)
+		}
+	}
+}
+
+func TestStrictJSONMetadataUnchanged(t *testing.T) {
+	for _, data := range []string{`{"format":2,"format":1}`, `{"Format":2}`, `{"unknown":"secret-value"}`, `{"format":"secret-value"}`} {
+		var m metadata
+		if err := strictJSON([]byte(data), &m); err == nil {
+			t.Fatalf("metadata JSON accepted: %s", data)
 		}
 	}
 }
@@ -93,7 +116,7 @@ func TestDurabilityBoundary(t *testing.T) {
 				t.Fatal(err)
 			}
 			if point == "stage" {
-				if !strings.Contains(s, ".inprogress-") {
+				if !strings.Contains(s, "inprogress-") {
 					t.Fatal("stage not preserved", s)
 				}
 				if _, err := invoke(t, f, "backup"); err == nil || !strings.Contains(err.Error(), "incomplete staging") {
@@ -107,6 +130,12 @@ func TestDurabilityBoundary(t *testing.T) {
 }
 
 func TestInspectionFailureQuarantinesAndReleasesLock(t *testing.T) {
+	for name, verbose := range map[string]bool{"default": false, "verbose": true} {
+		t.Run(name, func(t *testing.T) { testInspectionFailureQuarantinesAndReleasesLock(t, verbose) })
+	}
+}
+
+func testInspectionFailureQuarantinesAndReleasesLock(t *testing.T, verbose bool) {
 	f := setup(t)
 	mark(t, f, "sleep")
 	prev := inspectGroup
@@ -123,7 +152,11 @@ func TestInspectionFailureQuarantinesAndReleasesLock(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { var b bytes.Buffer; done <- run(ctx, []string{"backup", "--config", f.file}, &b) }()
+	args := []string{"backup", "--config", f.file}
+	if verbose {
+		args = append(args, "--verbose")
+	}
+	go func() { var b bytes.Buffer; done <- run(ctx, args, &b) }()
 	deadline := time.After(5 * time.Second)
 	for {
 		if _, err := os.Stat(filepath.Join(f.c.BackupDir, "ready")); err == nil {
@@ -157,7 +190,7 @@ func TestInspectionFailureQuarantinesAndReleasesLock(t *testing.T) {
 	}
 	lk.Close()
 	s, err := invoke(t, f, "status")
-	if err != nil || !strings.Contains(s, ".inprogress-") {
+	if err != nil || !strings.Contains(s, "inprogress-") {
 		t.Fatalf("stage not quarantined: %v %s", err, s)
 	}
 	_, err = invoke(t, f, "backup")

@@ -14,6 +14,8 @@ import (
 	"reflect"
 	"strings"
 	"syscall"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 func pathInfo(path string) (fs.FileInfo, error) {
@@ -96,20 +98,71 @@ func directory(path string, private bool) error {
 func overlaps(a, b string) bool {
 	return a == b || a == "/" || b == "/" || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
 }
+
+// backupRootMissing accepts absent roots for backup initialization, but validates
+// every existing component before either backup or read-only commands proceed.
+func backupRootMissing(path string) (bool, error) {
+	if err := cleanAbsolute(path); err != nil {
+		return false, errors.New("unsafe backup directory path")
+	}
+	cur := "/"
+	for _, part := range strings.Split(strings.TrimPrefix(path, "/"), "/") {
+		if part == "" {
+			continue
+		}
+		next := filepath.Join(cur, part)
+		fi, err := os.Lstat(next)
+		if errors.Is(err, os.ErrNotExist) {
+			if err := controlledParents(next); err != nil {
+				return false, errors.New("unsafe backup directory ancestor")
+			}
+			return true, nil
+		}
+		if err != nil || !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
+			return false, errors.New("unsafe backup directory component")
+		}
+		cur = next
+	}
+	if err := directory(path, true); err != nil {
+		return false, errors.New("unsafe backup directory ownership, mode or ancestor")
+	}
+	return false, nil
+}
+
 func loadConfig(path string) (config, error) {
 	var c config
 	if err := privateFile(path); err != nil {
-		return c, fmt.Errorf("config: %w", err)
+		if errors.Is(err, os.ErrNotExist) {
+			return c, errors.New("config file missing")
+		}
+		return c, errors.New("unsafe config file permissions or path")
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return c, err
+		return c, errors.New("config file unreadable")
 	}
 	if len(b) > 64*1024 {
 		return c, errors.New("config too large")
 	}
-	if err := strictJSON(b, &c); err != nil {
-		return c, fmt.Errorf("config JSON: %w", err)
+	// Struct field matching is case-insensitive, so validate exact top-level
+	// keys independently before strict decoding into the typed destination.
+	var fields map[string]any
+	if err := toml.Unmarshal(b, &fields); err != nil {
+		return c, errors.New("invalid config TOML")
+	}
+	allowed := map[string]bool{
+		"backup_dir": true, "datadir": true, "socket": true,
+		"defaults_file": true, "keep": true, "min_free_bytes": true,
+		"xtrabackup": true,
+	}
+	for key := range fields {
+		if !allowed[key] {
+			return c, errors.New("unknown or incorrectly cased config field")
+		}
+	}
+	if err := toml.NewDecoder(bytes.NewReader(b)).DisallowUnknownFields().Decode(&c); err != nil {
+		// Decoder errors may echo private config values.
+		return c, errors.New("invalid config TOML")
 	}
 	if c.Xtrabackup == "" {
 		c.Xtrabackup = "/usr/bin/xtrabackup"
@@ -117,7 +170,7 @@ func loadConfig(path string) (config, error) {
 	if c.Keep < 1 || c.MinFreeBytes < 0 {
 		return c, errors.New("keep must be >= 1 and min_free_bytes >= 0")
 	}
-	if err := directory(c.BackupDir, true); err != nil {
+	if _, err := backupRootMissing(c.BackupDir); err != nil {
 		return c, err
 	}
 	if err := cleanAbsolute(c.Datadir); err != nil {

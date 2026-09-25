@@ -1,0 +1,11 @@
+# Packaged at /etc/mysql/xbkeeper.cnf (root:root 0600); also shipped as an example.
+# No account or password is configured by this template. XtraBackup may use
+# MySQL client defaults when user is unset. Confirm effective DB authentication
+# independently: OS root does not guarantee socket authentication in MySQL.
+# Review local MySQL policy and enable only the options actually needed.
+[xtrabackup]
+# Optional dedicated backup account (provision and grant it separately):
+# user=YOUR_BACKUP_USER
+# password=YOUR_BACKUP_PASSWORD
+# If using a socket-authenticated account instead, confirm that account and
+# its privileges independently; do not assume this file grants access.

@@ -1,0 +1,16 @@
+# Packaged at /etc/xbkeeper/xbkeeper.toml (root:root 0600); also shipped as an example.
+# Review paths, mounts and capacity before use. Only backup initializes missing
+# paths (mode 0700); status/verify do not. The packaged tmpfiles rule prepares the
+# default root without repairing existing permissions. No timer is enabled.
+backup_dir = "/var/backups/xtrabackup"
+# MySQL data directory and local Unix socket.
+datadir = "/var/lib/mysql"
+socket = "/run/mysqld/mysqld.sock"
+# External private MySQL option file, root-owned mode 0600. No credentials here.
+defaults_file = "/etc/mysql/xbkeeper.cnf"
+# Number of completed prepared backups retained after a new success.
+keep = 3
+# Free-space reserve in bytes (10 GiB), in addition to datadir allocation.
+min_free_bytes = 10_737_418_240
+# Optional: default is /usr/bin/xtrabackup.
+xtrabackup = "/usr/bin/xtrabackup"

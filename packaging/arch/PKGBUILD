@@ -1,34 +1,48 @@
 pkgname=xbkeeper
-pkgver=0.2.0
-pkgrel=1
+pkgver=20260926
+pkgrel=4
 pkgdesc='Small local full-backup and retention manager for Percona XtraBackup'
 arch=('x86_64' 'aarch64')
-license=('BSD-3-Clause')
+license=('BSD-3-Clause' 'MIT')
 depends=('xtrabackup')
 makedepends=('go>=1.24')
 options=('!lto')
+backup=('etc/xbkeeper/xbkeeper.toml' 'etc/mysql/xbkeeper.cnf')
 # Local source distribution generated with `make dist` at the repository root.
 # No public upstream URL is assumed before this repository is published.
-source=("${pkgname}-${pkgver}.tar.gz")
-sha256sums=('d5c9cc2ba4753fb94996c220298d678c7ba33499000725ab7c5cd612dcd2ad20')
+source=("${pkgname}-v${pkgver}-${pkgrel}.tar.gz")
+sha256sums=('8a408fe5f1e4e1c7bfbdcbb2d032d785b0bc79a779c41ae6a511e79630477af0')
 
 build() {
-  cd "${pkgname}-${pkgver}"
+  cd "${pkgname}-v${pkgver}-${pkgrel}"
   CGO_ENABLED=0 go build -trimpath -buildvcs=false \
-    -ldflags "-X main.Version=${pkgver}" -o xbkeeper .
+    -ldflags "-X main.Version=v${pkgver}-${pkgrel}" -o xbkeeper .
 }
 
 check() {
-  cd "${pkgname}-${pkgver}"
+  cd "${pkgname}-v${pkgver}-${pkgrel}"
   go test ./...
 }
 
 package() {
-  cd "${pkgname}-${pkgver}"
+  cd "${pkgname}-v${pkgver}-${pkgrel}"
   install -Dm755 xbkeeper "${pkgdir}/usr/bin/xbkeeper"
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  install -Dm644 LICENSES/go-toml-MIT.txt "${pkgdir}/usr/share/licenses/${pkgname}/go-toml-MIT.txt"
   install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
   install -Dm644 docs/integrity.md "${pkgdir}/usr/share/doc/${pkgname}/docs/integrity.md"
+  install -Dm644 docs/systemd-migration.md "${pkgdir}/usr/share/doc/${pkgname}/docs/systemd-migration.md"
+  install -Dm644 docs/toml-migration.md "${pkgdir}/usr/share/doc/${pkgname}/docs/toml-migration.md"
+  install -Dm644 examples/xbkeeper.toml "${pkgdir}/usr/share/doc/${pkgname}/examples/xbkeeper.toml"
+  install -Dm644 examples/xbkeeper.cnf "${pkgdir}/usr/share/doc/${pkgname}/examples/xbkeeper.cnf"
+  install -Dm644 examples/README.md "${pkgdir}/usr/share/doc/${pkgname}/examples/README.md"
+  install -dm700 "${pkgdir}/etc/xbkeeper"
+  install -m600 examples/xbkeeper.toml "${pkgdir}/etc/xbkeeper/xbkeeper.toml"
+  install -dm755 "${pkgdir}/etc/mysql"
+  install -m600 examples/xbkeeper.cnf "${pkgdir}/etc/mysql/xbkeeper.cnf"
   install -Dm644 packaging/arch/README.md \
     "${pkgdir}/usr/share/doc/${pkgname}/packaging/arch/README.md"
+  install -Dm644 packaging/systemd/xbkeeper.service "${pkgdir}/usr/lib/systemd/system/xbkeeper.service"
+  install -Dm644 packaging/systemd/xbkeeper.timer "${pkgdir}/usr/lib/systemd/system/xbkeeper.timer"
+  install -Dm644 packaging/tmpfiles/xbkeeper.conf "${pkgdir}/usr/lib/tmpfiles.d/xbkeeper.conf"
 }

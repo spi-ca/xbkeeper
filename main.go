@@ -21,17 +21,18 @@ var Version = "dev"
 
 const formatVersion = 2
 const maxLog = 1 << 20
+const defaultConfigPath = "/etc/xbkeeper/xbkeeper.toml"
 
-var managedName = regexp.MustCompile(`^(backup|\.inprogress)-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}$`)
+var managedName = regexp.MustCompile(`^(backup|inprogress|\.inprogress)-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}$`)
 
 type config struct {
-	BackupDir    string `json:"backup_dir"`
-	Datadir      string `json:"datadir"`
-	Socket       string `json:"socket"`
-	DefaultsFile string `json:"defaults_file"`
-	Keep         int    `json:"keep"`
-	MinFreeBytes int64  `json:"min_free_bytes"`
-	Xtrabackup   string `json:"xtrabackup"`
+	BackupDir    string `toml:"backup_dir"`
+	Datadir      string `toml:"datadir"`
+	Socket       string `toml:"socket"`
+	DefaultsFile string `toml:"defaults_file"`
+	Keep         int    `toml:"keep"`
+	MinFreeBytes int64  `toml:"min_free_bytes"`
+	Xtrabackup   string `toml:"xtrabackup"`
 }
 type metadata struct {
 	Format            int    `json:"format"`
@@ -62,33 +63,87 @@ func runWithLog(ctx context.Context, args []string, out, logOutput io.Writer) er
 		_, err := fmt.Fprintln(out, Version)
 		return err
 	}
-	if len(args) < 1 || (args[0] != "backup" && args[0] != "status" && args[0] != "verify") {
-		return errors.New("usage: xbkeeper {backup|status|verify} --config PATH | xbkeeper verify --config PATH --backup NAME | xbkeeper version")
+	cmd, cfgPath, selected, flags, err := parseOptions(args)
+	if err != nil {
+		return err
 	}
-	cmd := args[0]
-	f := flag.NewFlagSet(cmd, flag.ContinueOnError)
-	f.SetOutput(io.Discard)
-	cfgPath := f.String("config", "", "absolute config path")
-	var selected *string
-	if cmd == "verify" {
-		selected = f.String("backup", "", "completed backup basename")
-	}
-	if err := f.Parse(args[1:]); err != nil || f.NArg() != 0 || *cfgPath == "" {
-		return errors.New("expected --config ABSOLUTE_PATH")
-	}
-	c, err := loadConfig(*cfgPath)
+	c, err := loadConfig(cfgPath)
 	if err != nil {
 		return phaseError("config", err)
+	}
+	if cmd == "status" || cmd == "verify" {
+		missing, err := backupRootMissing(c.BackupDir)
+		if err != nil {
+			return phaseError("config", err)
+		}
+		if missing {
+			return fmt.Errorf("%s: backup directory missing; run backup to initialize it", cmd)
+		}
 	}
 	if cmd == "status" {
 		s, err := inspect(c.BackupDir)
 		if err != nil {
 			return phaseError("validation", err)
 		}
-		return json.NewEncoder(out).Encode(s)
+		if flags.json {
+			return json.NewEncoder(out).Encode(s)
+		}
+		return printStatus(out, s)
 	}
 	if cmd == "verify" {
-		return verify(ctx, c.BackupDir, *selected, out, events)
+		return verify(ctx, c.BackupDir, selected, out, events)
 	}
-	return backup(ctx, c, out, events)
+	return backup(ctx, c, out, events, flags.verbose)
+}
+
+type commandFlags struct{ json, verbose bool }
+
+func parseOptions(args []string) (cmd, cfgPath, selected string, flags commandFlags, err error) {
+	if len(args) < 1 || (args[0] != "backup" && args[0] != "status" && args[0] != "verify") {
+		err = errors.New("usage: xbkeeper backup [--config PATH] [--verbose] | status [--config PATH] [--json] | verify [--config PATH] [--backup NAME] | version")
+		return
+	}
+	cmd = args[0]
+	f := flag.NewFlagSet(cmd, flag.ContinueOnError)
+	f.SetOutput(io.Discard)
+	f.StringVar(&cfgPath, "config", defaultConfigPath, "absolute config path")
+	if cmd == "verify" {
+		f.StringVar(&selected, "backup", "", "completed backup basename")
+	}
+	if cmd == "status" {
+		f.BoolVar(&flags.json, "json", false, "machine-readable status")
+	}
+	if cmd == "backup" {
+		f.BoolVar(&flags.verbose, "verbose", false, "stream bounded child output to stderr")
+	}
+	if err = f.Parse(args[1:]); err != nil || f.NArg() != 0 || cfgPath == "" {
+		cmd, cfgPath, selected, flags = "", "", "", commandFlags{}
+		err = errors.New("invalid command flags or arguments")
+	}
+	return
+}
+
+func printStatus(out io.Writer, s status) error {
+	if _, err := fmt.Fprintf(out, "Backups (%d):\n", len(s.Backups)); err != nil {
+		return err
+	}
+	for _, name := range s.Backups {
+		if _, err := fmt.Fprintln(out, "  "+name); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(out, "Incomplete (%d):\n", len(s.Incomplete)); err != nil {
+		return err
+	}
+	for _, name := range s.Incomplete {
+		if _, err := fmt.Fprintln(out, "  "+name); err != nil {
+			return err
+		}
+	}
+	last := "none"
+	if s.LastSuccess != "" {
+		last = s.LastSuccess
+	}
+	_, err := fmt.Fprintln(out, "Last success: "+last)
+	return err
 }

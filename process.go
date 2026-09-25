@@ -41,6 +41,10 @@ func (l *limitedWriter) Write(p []byte) (int, error) {
 	return n, nil
 }
 
+type childExit struct{ code int }
+
+func (e *childExit) Error() string { return "xtrabackup exited unsuccessfully" }
+
 // A failed containment check must quarantine the stage and block subsequent runs.
 type containmentUncertain struct{}
 
@@ -117,11 +121,15 @@ func waitChild(cmd *exec.Cmd) error {
 }
 
 func runChild(ctx context.Context, bin string, args []string, output io.Writer) error {
+	return runChildStreams(ctx, bin, args, output, output)
+}
+
+func runChildStreams(ctx context.Context, bin string, args []string, stdout, stderr io.Writer) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	cmd := exec.Command(bin, args...)
-	cmd.Stdout, cmd.Stderr = output, output
+	cmd.Stdout, cmd.Stderr = stdout, stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.WaitDelay = time.Second
 	if err := cmd.Start(); err != nil {
@@ -164,6 +172,10 @@ func runChild(ctx context.Context, bin string, args []string, output io.Writer) 
 					return errors.New("xtrabackup inspection failed")
 				}
 				if waitErr != nil {
+					var exit *exec.ExitError
+					if errors.As(waitErr, &exit) {
+						return &childExit{code: exit.ExitCode()}
+					}
 					return errors.New("xtrabackup exited unsuccessfully")
 				}
 				return nil
