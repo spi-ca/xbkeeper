@@ -18,7 +18,7 @@ import (
 func TestStatusFormatsAndStaging(t *testing.T) {
 	f := setup(t)
 	empty, err := invoke(t, f, "status")
-	if err != nil || empty != "Command: status\nResult: ok\nBackups (0):\nIncomplete (0):\nLast success: none\n" {
+	if err != nil || empty != "Command: status\nResult: ok\nBackups (0):\nIncomplete (0):\nPending deletions (0):\nLast success: none\n" {
 		t.Fatalf("empty: %q %v", empty, err)
 	}
 	for _, name := range []string{"inprogress-20200101T000000Z-0000000000000001", ".inprogress-20200101T000000Z-0000000000000002"} {

@@ -23,7 +23,7 @@ const formatVersion = 2
 const maxLog = 1 << 20
 const defaultConfigPath = "/etc/xbkeeper/xbkeeper.toml"
 
-var managedName = regexp.MustCompile(`^(backup|inprogress|\.inprogress)-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}$`)
+var managedName = regexp.MustCompile(`^(backup|inprogress|\.inprogress|\.deleting)-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}$`)
 
 type config struct {
 	BackupDir    string `toml:"backup_dir"`
@@ -41,9 +41,10 @@ type metadata struct {
 	XtrabackupVersion string `json:"xtrabackup_version"`
 }
 type status struct {
-	Backups     []string `json:"backups"`
-	Incomplete  []string `json:"incomplete"`
-	LastSuccess string   `json:"last_success,omitempty"`
+	Backups          []string `json:"backups"`
+	Incomplete       []string `json:"incomplete"`
+	PendingDeletions []string `json:"pending_deletions"`
+	LastSuccess      string   `json:"last_success,omitempty"`
 }
 
 func main() {
@@ -111,7 +112,7 @@ func runWithLog(ctx context.Context, args []string, out, logOutput io.Writer) er
 		switch cmd {
 		case "status":
 			var s status
-			s, operationErr = inspect(c.BackupDir)
+			s, operationErr = inspectContext(ctx, c.BackupDir)
 			if operationErr != nil {
 				operationErr = phaseError("validation", operationErr)
 			} else {
@@ -232,6 +233,14 @@ func printStatus(out io.Writer, s status) error {
 		return err
 	}
 	for _, name := range s.Incomplete {
+		if _, err := fmt.Fprintln(out, "  "+name); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(out, "Pending deletions (%d):\n", len(s.PendingDeletions)); err != nil {
+		return err
+	}
+	for _, name := range s.PendingDeletions {
 		if _, err := fmt.Fprintln(out, "  "+name); err != nil {
 			return err
 		}

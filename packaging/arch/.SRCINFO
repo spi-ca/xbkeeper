@@ -1,7 +1,7 @@
 pkgbase = xbkeeper
 	pkgdesc = Small local full-backup and retention manager for Percona XtraBackup
 	pkgver = 20260926
-	pkgrel = 6
+	pkgrel = 7
 	arch = x86_64
 	arch = aarch64
 	license = BSD-3-Clause
@@ -11,8 +11,8 @@ pkgbase = xbkeeper
 	options = !strip
 	options = !debug
 	options = !lto
-	source = xbkeeper-v20260926-6.tar.gz
-	sha256sums = 1d2ce29d4b2a2465cb44918bc28cd6dbd4011279235d8006e68248f047e5cd41
+	source = xbkeeper-v20260926-7.tar.gz
+	sha256sums = 005248837a04d42e318e5b7a27eec350f991a31e4d5c6b536aa0de1d43d450f6
 
 pkgname = xbkeeper
 	depends = xtrabackup
@@ -21,4 +21,4 @@ pkgname = xbkeeper
 
 pkgname = xbkeeper-debug
 	pkgdesc = Detached debugging symbols for xbkeeper
-	depends = xbkeeper=20260926-6
+	depends = xbkeeper=20260926-7

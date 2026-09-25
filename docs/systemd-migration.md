@@ -19,6 +19,14 @@ authorized by this change.
   may also safely initialize a missing configured root.
 - Preserve the existing oneshot CLI, root identity, private umask, six-hour run
   timeout, control-group kill, sandbox and AF_UNIX-only connection policy.
+  The first-stage sandbox change denies clearly unrelated capabilities (system
+  administration, module/raw I/O, boot/time, network admin/raw, BPF,
+  perf and mknod), retains DAC/NICE/resource capabilities and SYS_PTRACE
+  (needed for complete `/proc` group inspection on `hidepid` hosts), and adds private
+  devices and kernel/clock/control-group protection, namespace/SUID/realtime/
+  personality restrictions and native syscall architecture. This is not a
+  measured minimum. Do not add a broad syscall filter, ProcSubset, DynamicUser
+  or monitoring changes without separate evidence.
 - Preserve daily 03:00 host-local scheduling and Persistent=true. Enabling after
   a missed schedule may run immediately; activation remains a separate approval.
 - TOML migration updates the originally recorded JSON path; default config path
@@ -50,12 +58,18 @@ authorized by this change.
 4. This records the prior unit-migration handoff: preserve the completed 0.2.0
    integrity implementation and never rebuild from the stale 0.1 archive. The
    subsequent TOML migration initially bumped the source to 0.3.0; the current
-   pinned source version is v20260926-6. Keep its archive, checksum and .SRCINFO
+   pinned source version is v20260926-7. Keep its archive, checksum and .SRCINFO
    synchronized whenever the source snapshot changes.
    Verify archive contents include integrity sources/tests, new units, TOML
    examples and module sums. Never bypass checksums or imply a release occurred.
 5. Run Go tests/race/vet, source verification and source archive content checks,
    systemd unit syntax verification and calendar parsing. Do not start services.
+   Before a separately approved host rollout, check an isolated service sandbox
+   and perform a real XtraBackup full backup and prepare with the intended DB,
+   then status/verify, cancellation, retention and failure-path checks. A fake
+   child or successful syntax check cannot establish XtraBackup compatibility.
+   On failure, keep the existing schedule/package and backup data intact; do
+   not silently weaken unit restrictions to make an unverified backup pass.
    Verify package payload in an isolated build where available, otherwise state
    that actual package build is unverified. Run host-manifest regression tests
    separately after the manifests-side edits are settled.

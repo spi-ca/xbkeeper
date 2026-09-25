@@ -1,6 +1,6 @@
 pkgname=('xbkeeper' 'xbkeeper-debug')
 pkgver=20260926
-pkgrel=6
+pkgrel=7
 pkgdesc='Small local full-backup and retention manager for Percona XtraBackup'
 arch=('x86_64' 'aarch64')
 license=('BSD-3-Clause' 'MIT')
@@ -11,7 +11,7 @@ options=('!strip' '!debug' '!lto')
 # Local source distribution generated with `make dist` at the repository root.
 # No public upstream URL is assumed before this repository is published.
 source=("${pkgname}-v${pkgver}-${pkgrel}.tar.gz")
-sha256sums=('1d2ce29d4b2a2465cb44918bc28cd6dbd4011279235d8006e68248f047e5cd41')
+sha256sums=('005248837a04d42e318e5b7a27eec350f991a31e4d5c6b536aa0de1d43d450f6')
 
 build() {
   cd "${pkgname}-v${pkgver}-${pkgrel}"
