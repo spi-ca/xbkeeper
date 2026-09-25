@@ -1,7 +1,7 @@
 pkgbase = xbkeeper
 	pkgdesc = Small local full-backup and retention manager for Percona XtraBackup
 	pkgver = 20260926
-	pkgrel = 1
+	pkgrel = 2
 	arch = x86_64
 	arch = aarch64
 	license = BSD-3-Clause
@@ -9,7 +9,8 @@ pkgbase = xbkeeper
 	makedepends = go>=1.24
 	depends = xtrabackup
 	options = !lto
-	source = xbkeeper-v20260926-1.tar.gz
-	sha256sums = 29fbe4e214dfb69564ef2421bc344ab407e3b2d6982e3b19e1e8ba87c566d140
+	backup = etc/xbkeeper/xbkeeper.toml
+	source = xbkeeper-v20260926-2.tar.gz
+	sha256sums = 3cc83bb9436158202752f92e91242a402244471fbfac59a504677508b3eaa366
 
 pkgname = xbkeeper

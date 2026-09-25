@@ -1,7 +1,7 @@
 # TOML configuration and packaged examples
 
 Status: configuration migration originally implemented at version 0.3.0;
-the current pinned source version is v20260926-1. Independent
+the current pinned source version is v20260926-2. Independent
 design and implementation reviews completed; review findings required exact-case
 key checks and complete-fixture negative/escape tests. Packaging validation
 requirements are recorded below.
@@ -27,7 +27,7 @@ renaming JSON content to `.toml` is not migration.
   Changing a suffix is not conversion: existing JSON content needs explicit
   operator migration. The original plan called for tool version 0.3.0 and Arch
   release 1; the current version policy supersedes that numbering with
-  `v20260926-1` (`pkgver=20260926`, `pkgrel=1`).
+  `v20260926-2` (`pkgver=20260926`, `pkgrel=2`).
 - `xbkeeper.json` INSIDE a backup, metadata versions 1/2, `SHA256SUMS`, and JSON
   `status`/`verify` output remain unchanged. Keep strict JSON checks for metadata.
   Never bulk-replace every `.json` reference or alter existing backup artifacts.
@@ -36,10 +36,14 @@ renaming JSON content to `.toml` is not migration.
 
 - Package source example: `examples/xbkeeper.toml` with concise field comments;
   accompanying `examples/README.md` describes installation and prerequisites.
-- Install examples mode 0644 under `/usr/share/doc/xbkeeper/examples/`.
-  No real secrets, `/etc` payload, config-generation hook or automatic activation.
-- Operator config: `/etc/xbkeeper/xbkeeper.toml`, root-owned mode 0600, parent
-  mode 0700. Credential option file remains separately managed at
+- Install the generic default at `/etc/xbkeeper/xbkeeper.toml` (root-owned mode
+  0600, parent directory 0700), with a pacman `backup` entry preserving modified
+  operator configs across upgrades. Keep the documentation copy mode 0644 under
+  `/usr/share/doc/xbkeeper/examples/`. No real secrets, config-generation hook
+  or automatic activation.
+- Operator config: review and adapt the installed default at
+  `/etc/xbkeeper/xbkeeper.toml` before use; it is not a host-specific config.
+  The credential option file remains separately managed at
   `/etc/mysql/xbkeeper.cnf` (root-owned 0600).
 - Preserve the current package-owned systemd units under `/usr/lib/systemd/system`;
   change only ExecStart's config path to `.toml`. Existing `/etc/systemd` full-unit
@@ -59,9 +63,10 @@ renaming JSON content to `.toml` is not migration.
 3. Add/adjust tests for comments, separators, escaping, duplicate/unknown/case
    keys, nested tables, scalar types and bounds, invalid legacy JSON and private
    permissions. Retain all SHA256/legacy-backup/lock/cancellation tests.
-4. Update source/host docs and systemd/package contracts. Test that the example
-   matches accepted configuration keys and that the package installs examples
-   but never active config or secrets.
+4. Update source/host docs and systemd/package contracts. Test that the default
+   matches accepted configuration keys, that the package installs it privately
+   with pacman backup protection and retains the documentation copy, and that
+   no secrets are shipped.
 5. Run Go tests/race/vet and host contract tests, validate unit syntax offline;
    include go.sum/examples/new docs in deterministic source archives and package
    docs. Keep the minimum Go version compatible with the pinned parser.

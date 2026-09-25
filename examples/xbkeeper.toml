@@ -1,5 +1,6 @@
-# Copy and adapt manually to /etc/xbkeeper/xbkeeper.toml (root:root 0600).
-# Create the backup directory first, root-owned mode 0700.
+# Packaged at /etc/xbkeeper/xbkeeper.toml (root:root 0600); also shipped as an example.
+# Review local paths and capacity before use. Create the backup directory first,
+# root-owned mode 0700. Installing this file does not enable or run backups.
 backup_dir = "/var/backups/xtrabackup"
 # MySQL data directory and local Unix socket.
 datadir = "/var/lib/mysql"

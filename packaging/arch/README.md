@@ -2,12 +2,16 @@
 
 This is a local source-archive package, not an AUR publication or remote release.
 The package installs `/usr/bin/xbkeeper`, its BSD-3-Clause license, the linked
-TOML parser's MIT license, inactive examples under `/usr/share/doc/xbkeeper/examples/`, relevant
-documentation and the canonical `xbkeeper.service`/`xbkeeper.timer` (mode 0644)
-in `/usr/lib/systemd/system`. It does not create a DB account, install
-credentials/configuration, provision directories, enable/start a timer, run an
-install hook or delete backups on removal. Host TOML config, prerequisites and deployment
-instructions remain in `~/Codebase/kubernetes-manifests/03-arch-systemd/xbkeeper/`.
+TOML parser's MIT license, the generic default config at
+`/etc/xbkeeper/xbkeeper.toml` (root-owned file mode 0600 in a mode 0700
+`/etc/xbkeeper` directory), a copy under `/usr/share/doc/xbkeeper/examples/`,
+relevant documentation and the canonical `xbkeeper.service`/`xbkeeper.timer`
+(mode 0644) in `/usr/lib/systemd/system`. Pacman's `backup` entry preserves
+modified config during upgrades (new defaults may arrive as `.pacnew`); compare
+these manually. It does not create a DB account, install credentials, provision
+a backup directory, enable/start a timer, run an install hook or delete backups
+on removal. Host-specific config values, prerequisites and deployment instructions
+remain in `~/Codebase/kubernetes-manifests/03-arch-systemd/xbkeeper/`.
 The [unit migration plan](../../docs/systemd-migration.md) records the handoff.
 
 ## Existing host build sandbox
@@ -37,12 +41,12 @@ install (`-i`) is used.
 `make dist` uses deterministic archive timestamps, owner IDs, regular-file modes
 (0644) and gzip headers, and copies the archive next to `PKGBUILD` for makepkg's
 local-source lookup. Source file permissions/umask do not change its checksum.
-The canonical pinned version is `v20260926-1`: the release tag, Makefile
+The canonical pinned version is `v20260926-2`: the release tag, Makefile
 `VERSION`, source archive directory/name and binary `version` output use the
 full `vYYYYMMDD-N` string. Arch splits it into `pkgver=20260926` and
-`pkgrel=1`. A second release on the same day uses `v20260926-2`,
-`pkgver=20260926`, `pkgrel=2` and a **new matching source archive** named
-`xbkeeper-v20260926-2.tar.gz`; never bump only `pkgrel` while reusing the
+`pkgrel=2`. A further release on the same day uses `v20260926-3`,
+`pkgver=20260926`, `pkgrel=3` and a **new matching source archive** named
+`xbkeeper-v20260926-3.tar.gz`; never bump only `pkgrel` while reusing the
 previous source version/archive. Versions are pinned, not generated from the
 build date. After intentionally changing source files, update all version
 fields, regenerate the archive, review `makepkg -g`, update `sha256sums` in
@@ -66,7 +70,8 @@ It does not prove that dependency resolution works on a fresh Arch system.
 Normal package builds should check dependencies as above.
 
 After building, inspect the package file list and `.PKGINFO`, including the
-`/usr/lib/systemd/system` units; check the extracted binary's `version` command
+`/usr/lib/systemd/system` units, the private `/etc/xbkeeper` config permissions
+and the `backup` entry; check the extracted binary's `version` command
 without running `backup`. Keep package archives out of Git. Package creation
 does not establish real backup or restore correctness.
 
@@ -81,7 +86,12 @@ The timer schedules 03:00 host local time with `Persistent=true`: enabling it
 after a missed run can trigger a backup immediately. Neither package build nor
 installation authorizes enabling or running it.
 
-Before any separately approved host install/upgrade, inspect whether the timer
+Before any separately approved host install/upgrade, inspect any existing
+`/etc/xbkeeper/xbkeeper.toml` and preserve operator changes. Review the packaged
+default's generic MySQL paths against the host; the config is not a credential
+file and a separately managed private MySQL option file is required. Create the
+backup directory explicitly with root ownership and mode 0700 only after
+reviewing capacity, destination and retention. Inspect whether the timer
 is active/enabled and whether a backup is running; agree how an existing
 schedule is suspended/resumed without interrupting a backup. Inspect and safely
 back up any existing `/etc/systemd/system/xbkeeper.service` or `.timer`:

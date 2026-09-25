@@ -122,8 +122,27 @@ func TestPackagedTOMLExample(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := setup(t)
-	// Substitute only host-specific sample paths; parsing and schema stay identical.
+	// The same generic source is installed under /etc and copied to docs. It
+	// must contain no host identity, credential value or private-key reference.
 	sample := string(b)
+	for _, field := range []string{
+		`backup_dir = "/var/backups/xtrabackup"`,
+		`datadir = "/var/lib/mysql"`,
+		`socket = "/run/mysqld/mysqld.sock"`,
+		`defaults_file = "/etc/mysql/xbkeeper.cnf"`,
+		`keep = 3`, `min_free_bytes = 10_737_418_240`,
+		`xtrabackup = "/usr/bin/xtrabackup"`,
+	} {
+		if !strings.Contains(sample, field) {
+			t.Errorf("default missing generic setting %q", field)
+		}
+	}
+	for _, forbidden := range []string{"password", "keychain", "private_key", "https://", "mysql://"} {
+		if strings.Contains(strings.ToLower(sample), forbidden) {
+			t.Errorf("default must not include %q", forbidden)
+		}
+	}
+	// Substitute only host-specific sample paths; parsing and schema stay identical.
 	for _, pair := range [][2]string{{"/var/backups/xtrabackup", f.c.BackupDir}, {"/var/lib/mysql", f.c.Datadir}, {"/run/mysqld/mysqld.sock", f.c.Socket}, {"/etc/mysql/xbkeeper.cnf", f.c.DefaultsFile}, {"/usr/bin/xtrabackup", f.c.Xtrabackup}} {
 		sample = strings.ReplaceAll(sample, pair[0], pair[1])
 	}

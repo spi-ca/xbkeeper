@@ -1,16 +1,17 @@
 pkgname=xbkeeper
 pkgver=20260926
-pkgrel=1
+pkgrel=2
 pkgdesc='Small local full-backup and retention manager for Percona XtraBackup'
 arch=('x86_64' 'aarch64')
 license=('BSD-3-Clause' 'MIT')
 depends=('xtrabackup')
 makedepends=('go>=1.24')
 options=('!lto')
+backup=('etc/xbkeeper/xbkeeper.toml')
 # Local source distribution generated with `make dist` at the repository root.
 # No public upstream URL is assumed before this repository is published.
 source=("${pkgname}-v${pkgver}-${pkgrel}.tar.gz")
-sha256sums=('29fbe4e214dfb69564ef2421bc344ab407e3b2d6982e3b19e1e8ba87c566d140')
+sha256sums=('3cc83bb9436158202752f92e91242a402244471fbfac59a504677508b3eaa366')
 
 build() {
   cd "${pkgname}-v${pkgver}-${pkgrel}"
@@ -34,6 +35,8 @@ package() {
   install -Dm644 docs/toml-migration.md "${pkgdir}/usr/share/doc/${pkgname}/docs/toml-migration.md"
   install -Dm644 examples/xbkeeper.toml "${pkgdir}/usr/share/doc/${pkgname}/examples/xbkeeper.toml"
   install -Dm644 examples/README.md "${pkgdir}/usr/share/doc/${pkgname}/examples/README.md"
+  install -dm700 "${pkgdir}/etc/xbkeeper"
+  install -m600 examples/xbkeeper.toml "${pkgdir}/etc/xbkeeper/xbkeeper.toml"
   install -Dm644 packaging/arch/README.md \
     "${pkgdir}/usr/share/doc/${pkgname}/packaging/arch/README.md"
   install -Dm644 packaging/systemd/xbkeeper.service "${pkgdir}/usr/lib/systemd/system/xbkeeper.service"
