@@ -1,0 +1,65 @@
+name: Release verification
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-verify-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      # actions/checkout v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      # actions/setup-go v5.0.2
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Validate tag against package versions
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          version="${RELEASE_TAG#v}"
+          test "$(sed -n 's/^VERSION := //p' Makefile)" = "$version"
+          test "$(sed -n 's/^pkgver=//p' packaging/arch/PKGBUILD)" = "$version"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+      - name: Test, race check and vet
+        run: make test
+      - name: Build and verify source archive
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          make build
+          test "$(./build/xbkeeper version)" = "$VERSION"
+          make dist
+          (cd dist && sha256sum "xbkeeper-$VERSION.tar.gz" > SHA256SUMS)
+          (cd dist && sha256sum --check SHA256SUMS)
+          unpacked="$(mktemp -d)"
+          trap 'rm -rf "$unpacked"' EXIT
+          tar -xzf "dist/xbkeeper-$VERSION.tar.gz" -C "$unpacked"
+          make -C "$unpacked/xbkeeper-$VERSION" test build
+          test "$("$unpacked/xbkeeper-$VERSION/build/xbkeeper" version)" = "$VERSION"
+      # actions/upload-artifact v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: xbkeeper-${{ steps.version.outputs.version }}-source
+          path: |
+            dist/xbkeeper-${{ steps.version.outputs.version }}.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
