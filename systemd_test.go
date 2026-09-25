@@ -132,8 +132,8 @@ func TestPackageInstallsUnitsWithoutActivationOrProvisioning(t *testing.T) {
 		t.Fatal(err)
 	}
 	pkg := string(content)
-	if !strings.Contains(pkg, "pkgver=20260926\npkgrel=4\n") {
-		t.Error("package must be version 20260926, release 3")
+	if !strings.Contains(pkg, "pkgver=20260926\npkgrel=5\n") {
+		t.Error("package must be version 20260926, release 5")
 	}
 	if strings.Count(pkg, "backup=(") != 1 || !strings.Contains(pkg, "\nbackup=('etc/xbkeeper/xbkeeper.toml' 'etc/mysql/xbkeeper.cnf')\n") {
 		t.Error("package must protect both operator config and MySQL option template with pacman backup")

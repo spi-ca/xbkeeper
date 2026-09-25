@@ -25,7 +25,7 @@ func TestMissingBackupRootCLI(t *testing.T) {
 			args = []string{"status", "--json", "--config", f.file}
 		}
 		err := run(context.Background(), args, &out)
-		if err == nil || !strings.Contains(err.Error(), "backup directory missing; run backup to initialize it") || out.Len() != 0 {
+		if err == nil || !strings.Contains(err.Error(), "backup directory missing; run backup to initialize it") || (command == "status --json" && !strings.Contains(out.String(), `"ok":false`)) || (command != "status --json" && !strings.Contains(out.String(), "Result: failed:")) {
 			t.Fatalf("%s: %q %v", command, out.String(), err)
 		}
 		if _, err := os.Lstat(f.c.BackupDir); !errors.Is(err, os.ErrNotExist) {
@@ -190,7 +190,7 @@ func TestConfigDiagnosticCategoriesAreFixed(t *testing.T) {
 			tc.change()
 			var out bytes.Buffer
 			err := run(context.Background(), []string{"status", "--config", f.file}, &out)
-			if err == nil || err.Error() != "config: "+tc.want || out.Len() != 0 || strings.Contains(err.Error(), "sensitive-config") || strings.Contains(err.Error(), "password-secret") || strings.Contains(err.Error(), "unsafe-sentinel") {
+			if err == nil || err.Error() != "config: "+tc.want || !strings.Contains(out.String(), "Result: failed: config: "+tc.want) || strings.Contains(err.Error(), "sensitive-config") || strings.Contains(err.Error(), "password-secret") || strings.Contains(err.Error(), "unsafe-sentinel") {
 				t.Fatalf("diagnostic: %v, output %q", err, out.String())
 			}
 		})
@@ -271,7 +271,7 @@ func TestInitializationSyncFailureAndRetry(t *testing.T) {
 	for attempt := 0; attempt < 2; attempt++ {
 		// Second attempt must sync an already-existing entry left by the first one.
 		out, err := invoke(t, f, "backup")
-		if err == nil || err.Error() != "validation: backup directory initialization sync failed; backup not started" || out != "" {
+		if err == nil || err.Error() != "validation: backup directory initialization sync failed; backup not started" || !strings.Contains(out, "Result: failed: validation:") {
 			t.Fatalf("attempt %d: %q %v", attempt, out, err)
 		}
 		entries, err := os.ReadDir(f.c.BackupDir)

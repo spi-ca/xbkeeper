@@ -102,7 +102,7 @@ func TestDurabilityBoundary(t *testing.T) {
 				return syncRoot(r)
 			}
 			result, err := invoke(t, f, "backup")
-			if point != "success" && (err == nil || !strings.Contains(err.Error(), "sync failed") || strings.Contains(err.Error(), "secret") || result != "") {
+			if point != "success" && (err == nil || !strings.Contains(err.Error(), "sync failed") || strings.Contains(err.Error(), "secret") || !strings.Contains(result, "Result: failed:")) {
 				t.Fatalf("%s result=%q err=%v", point, result, err)
 			}
 			if point == "success" && (err != nil || strings.Join(order, ",") != "stage,parent") {

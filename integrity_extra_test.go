@@ -119,7 +119,7 @@ func TestCancellationAtPromotionBoundaries(t *testing.T) {
 			}
 			var out, logs bytes.Buffer
 			err := runWithLog(ctx, []string{"backup", "--config", f.file}, &out, &logs)
-			if !errors.Is(err, context.Canceled) || out.Len() != 0 {
+			if !errors.Is(err, context.Canceled) || !strings.Contains(out.String(), "Result: failed:") {
 				t.Fatalf("cancelled backup: %v stdout=%q", err, out.String())
 			}
 			if _, err := os.Stat(filepath.Join(f.c.BackupDir, old)); err != nil {
@@ -204,7 +204,7 @@ func TestManifestBoundsAndCancellation(t *testing.T) {
 	cancel()
 	select {
 	case err := <-done:
-		if !errors.Is(err, context.Canceled) || out.Len() != 0 {
+		if !errors.Is(err, context.Canceled) || !strings.Contains(out.String(), "Result: failed:") {
 			t.Fatalf("verify cancellation: %v %q", err, out.String())
 		}
 	case <-time.After(4 * time.Second):

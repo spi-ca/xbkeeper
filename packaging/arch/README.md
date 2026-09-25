@@ -51,12 +51,12 @@ install (`-i`) is used.
 `make dist` uses deterministic archive timestamps, owner IDs, regular-file modes
 (0644) and gzip headers, and copies the archive next to `PKGBUILD` for makepkg's
 local-source lookup. Source file permissions/umask do not change its checksum.
-The canonical pinned version is `v20260926-4`: the release tag, Makefile
+The canonical pinned version is `v20260926-5`: the release tag, Makefile
 `VERSION`, source archive directory/name and binary `version` output use the
 full `vYYYYMMDD-N` string. Arch splits it into `pkgver=20260926` and
-`pkgrel=4`. A further release on the same day uses `v20260926-5`,
-`pkgver=20260926`, `pkgrel=5` and a **new matching source archive** named
-`xbkeeper-v20260926-5.tar.gz`; never bump only `pkgrel` while reusing the
+`pkgrel=5`. A further release on the same day uses `v20260926-6`,
+`pkgver=20260926`, `pkgrel=6` and a **new matching source archive** named
+`xbkeeper-v20260926-6.tar.gz`; never bump only `pkgrel` while reusing the
 previous source version/archive. Versions are pinned, not generated from the
 build date. After intentionally changing source files, update all version
 fields, regenerate the archive, review `makepkg -g`, update `sha256sums` in

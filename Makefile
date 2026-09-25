@@ -1,4 +1,4 @@
-VERSION := v20260926-4
+VERSION := v20260926-5
 GO ?= go
 DIST := dist/xbkeeper-$(VERSION).tar.gz
 SOURCES := go.mod go.sum $(sort $(wildcard *.go)) README.md LICENSE LICENSES/go-toml-MIT.txt Makefile docs/integrity.md docs/systemd-migration.md docs/toml-migration.md examples/README.md examples/xbkeeper.toml examples/xbkeeper.cnf packaging/arch/README.md packaging/systemd/xbkeeper.service packaging/systemd/xbkeeper.timer packaging/tmpfiles/xbkeeper.conf
