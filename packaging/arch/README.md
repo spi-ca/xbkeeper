@@ -2,11 +2,13 @@
 
 This is a local source-archive package, not an AUR publication. On a reviewed
 matching tag at the current main tip, the release workflow builds it in an
-isolated Arch container and publishes it with the source archive, Linux
-amd64/arm64 static binaries and SHA256SUMS as a GitHub release. PR/main CI
-builds the same artifacts without publishing. The container runs
-`makepkg --nodeps`; it does not verify a dependency transaction or live
-backup/restore compatibility.
+isolated Arch container and publishes both `xbkeeper` and `xbkeeper-debug`
+with the source archive, Linux amd64/arm64 static binaries and SHA256SUMS as
+a GitHub release. PR/main CI builds the same artifacts without publishing.
+The container runs `makepkg --nodeps`, then exercises isolated local pacman
+transactions with a minimal `xtrabackup` metadata stub (no real DB): a debug-only
+install fails with an older main, while the matching main/debug pair succeeds.
+This does not verify live backup/restore compatibility.
 The package installs `/usr/bin/xbkeeper`, its BSD-3-Clause license, the linked
 TOML parser's MIT license, the generic default config at
 `/etc/xbkeeper/xbkeeper.toml` (root-owned file mode 0600 in a mode 0700
@@ -46,17 +48,30 @@ transaction; these are not commands to run on a production DB host casually.
 Tests invoke a fake XtraBackup, never a database. Normal builds resolve the
 pinned `github.com/pelletier/go-toml/v2` module (see `go.mod`/`go.sum`);
 prefetch and verify it separately for offline builds. No automatic package
-install (`-i`) is used.
+install (`-i`) is used. The split recipe explicitly detaches Go DWARF symbols,
+strips the main binary's debug sections, adds a GNU debuglink and disables
+makepkg's automatic debug package. `xbkeeper-debug` contains the separate
+symbols and licenses and depends on `xbkeeper=20260926-6`; it is **optional**
+for running xbkeeper, including `--verbose` (which controls runtime logs, not
+debug symbols). Install both matching files in one reviewed transaction when
+symbols are desired:
+
+```sh
+sudo pacman -U ./xbkeeper-20260926-6-x86_64.pkg.tar.zst \
+  ./xbkeeper-debug-20260926-6-x86_64.pkg.tar.zst
+```
+
+This is an example for a separately approved host deployment, not an instruction
+to run it during build/review; normal main-only installation is also supported.
 
 `make dist` uses deterministic archive timestamps, owner IDs, regular-file modes
 (0644) and gzip headers, and copies the archive next to `PKGBUILD` for makepkg's
 local-source lookup. Source file permissions/umask do not change its checksum.
-The canonical pinned version is `v20260926-5`: the release tag, Makefile
+The canonical pinned version is `v20260926-6`: the release tag, Makefile
 `VERSION`, source archive directory/name and binary `version` output use the
 full `vYYYYMMDD-N` string. Arch splits it into `pkgver=20260926` and
-`pkgrel=5`. A further release on the same day uses `v20260926-6`,
-`pkgver=20260926`, `pkgrel=6` and a **new matching source archive** named
-`xbkeeper-v20260926-6.tar.gz`; never bump only `pkgrel` while reusing the
+`pkgrel=6`. A further release on the same day requires another revision and a
+**new matching source archive**; never bump only `pkgrel` while reusing the
 previous source version/archive. Versions are pinned, not generated from the
 build date. After intentionally changing source files, update all version
 fields, regenerate the archive, review `makepkg -g`, update `sha256sums` in
@@ -76,13 +91,18 @@ so Go can unpack them without changing the host cache. Set `GOPROXY=off`; withou
 the module the offline build fails rather than disabling sum checks.
 `makepkg --nodeps` is appropriate **only for this controlled verification** when
 Go is supplied outside pacman and the tests do not require installed XtraBackup.
-It does not prove that dependency resolution works on a fresh Arch system.
+The isolated transaction fixture tests the exact main/debug dependency and
+uses a minimal local `xtrabackup` stub instead of installing a real backup tool;
+it does not prove runtime dependency resolution on a fresh Arch system.
 Normal package builds should check dependencies as above.
 
 After building, inspect the package file list and `.PKGINFO`, including the
 `/usr/lib/systemd/system` units, the tmpfiles rule, the private `/etc/xbkeeper` config permissions
 and both `backup` entries and the `/etc/mysql` template/file modes; check the
-extracted binary's `version` command without running `backup`. Keep package archives out of Git. Package creation
+extracted binary's `version` command without running `backup`. Verify that
+`xbkeeper-debug` has exactly `depend = xbkeeper=20260926-6` in `.PKGINFO`,
+contains `/usr/lib/debug/usr/bin/xbkeeper.debug`, and the main binary has a
+matching GNU debuglink. Keep package archives out of Git. Package creation
 does not establish real backup or restore correctness.
 
 ## Separate host migration and activation

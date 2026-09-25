@@ -4,21 +4,25 @@ A small Linux-only full-backup wrapper for Percona XtraBackup. It runs one backu
 
 ## Build and use
 
-The pinned source, binary and release-tag version is `v20260926-5` (date and positive same-day revision); it does not change automatically on each build. A further release on the same date increments the revision. Arch maps this to `pkgver=20260926`, `pkgrel=5`. Keep the source archive and binary version identical to the full tag; a release tag must match the pinned source and Arch recipe. Regenerate the source archive, pinned checksum, and `.SRCINFO` after changing distributed files; older-version artifacts do not represent these sources. Do not package or publish until those pins are synchronized. No tag or release is created by building locally.
+The pinned source, binary and release-tag version is `v20260926-6` (date and positive same-day revision); it does not change automatically on each build. A further release on the same date increments the revision. Arch maps this to `pkgver=20260926`, `pkgrel=6`. Keep the source archive and binary version identical to the full tag; a release tag must match the pinned source and Arch recipe. Regenerate the source archive, pinned checksum, and `.SRCINFO` after changing distributed files; older-version artifacts do not represent these sources. Do not package or publish until those pins are synchronized. No tag or release is created by building locally.
 
 PR and main CI test release builds without publishing. After review and green
 main CI, a matching tag at the current main tip triggers source, static Linux
 amd64/arm64 and isolated Arch x86_64 builds. The tag workflow publishes a
-GitHub release with those four archives and `SHA256SUMS` only after tests,
-source/checksum validation and packaging succeed. Arch's `--nodeps` build does
-not verify dependency installation or live backup/restore compatibility.
+GitHub release with the source archive, two static Linux archives, paired Arch
+main/debug packages and `SHA256SUMS` only after tests, source/checksum validation,
+package inspection and isolated local dependency transactions succeed. The Arch
+build uses `--nodeps`; fixture transactions do not establish live backup/restore
+compatibility.
 
 Requires Go 1.24+ and an installed compatible XtraBackup. Build with `go build -o xbkeeper .`; check with `go test ./...`, `go test -race ./...`, and `go vet ./...`. Building from source does not install or activate anything. The Arch package
 includes the binary, a generic private `/etc/xbkeeper/xbkeeper.toml`, a
 comment-only MySQL option template at `/etc/mysql/xbkeeper.cnf`, documentation
 the [service/timer](packaging/systemd/) and a [tmpfiles rule](packaging/tmpfiles/xbkeeper.conf) for the default backup root; it does not enable or start the units.
 Review and adapt the default before use; pacman's `backup` entry preserves
-operator edits across upgrades. See [Arch packaging](packaging/arch/README.md)
+operator edits across upgrades. The separate debug package requires the exact
+matching main package version; it is not needed for `--verbose` logging. See
+[Arch packaging](packaging/arch/README.md)
 and the [unit migration plan](docs/systemd-migration.md). Host-specific TOML values,
 credentials, prerequisites and deployment policy remain outside this repository in
 `kubernetes-manifests/03-arch-systemd/xbkeeper/`.

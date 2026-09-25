@@ -132,22 +132,24 @@ func TestPackageInstallsUnitsWithoutActivationOrProvisioning(t *testing.T) {
 		t.Fatal(err)
 	}
 	pkg := string(content)
-	if !strings.Contains(pkg, "pkgver=20260926\npkgrel=5\n") {
-		t.Error("package must be version 20260926, release 5")
+	if !strings.Contains(pkg, "pkgver=20260926\npkgrel=6\n") {
+		t.Error("package must be version 20260926, release 6")
 	}
-	if strings.Count(pkg, "backup=(") != 1 || !strings.Contains(pkg, "\nbackup=('etc/xbkeeper/xbkeeper.toml' 'etc/mysql/xbkeeper.cnf')\n") {
+	if strings.Count(pkg, "backup=(") != 1 || !strings.Contains(pkg, "\n  backup=('etc/xbkeeper/xbkeeper.toml' 'etc/mysql/xbkeeper.cnf')\n") {
 		t.Error("package must protect both operator config and MySQL option template with pacman backup")
 	}
 	if strings.Contains(pkg, "install=") || strings.Contains(pkg, ".install") {
 		t.Error("package must not use an install hook")
 	}
-	_, body, found := strings.Cut(pkg, "package() {\n")
+	_, body, found := strings.Cut(pkg, "package_xbkeeper() {\n")
 	if !found {
 		t.Fatal("missing package() body")
 	}
 	// Each payload install is explicit. No active credentials, backup directory,
 	// hooks or unit activation are installed.
-	want := `  cd "${pkgname}-v${pkgver}-${pkgrel}"
+	want := `  depends=('xtrabackup')
+  backup=('etc/xbkeeper/xbkeeper.toml' 'etc/mysql/xbkeeper.cnf')
+  cd "${pkgbase}-v${pkgver}-${pkgrel}"
   install -Dm755 xbkeeper "${pkgdir}/usr/bin/xbkeeper"
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
   install -Dm644 LICENSES/go-toml-MIT.txt "${pkgdir}/usr/share/licenses/${pkgname}/go-toml-MIT.txt"
@@ -169,8 +171,24 @@ func TestPackageInstallsUnitsWithoutActivationOrProvisioning(t *testing.T) {
   install -Dm644 packaging/tmpfiles/xbkeeper.conf "${pkgdir}/usr/lib/tmpfiles.d/xbkeeper.conf"
 }
 `
+	body, _, _ = strings.Cut(body, "\npackage_xbkeeper-debug() {")
 	if body != want {
-		t.Errorf("package() payload differs from explicit binary/license/docs/config/units allowlist:\n%s", body)
+		t.Errorf("package_xbkeeper() payload differs from explicit binary/license/docs/config/units allowlist:\n%s", body)
+	}
+	_, debugBody, found := strings.Cut(pkg, "package_xbkeeper-debug() {\n")
+	if !found {
+		t.Fatal("missing explicit debug split package")
+	}
+	const debugWant = `  pkgdesc='Detached debugging symbols for xbkeeper'
+  depends=("xbkeeper=${pkgver}-${pkgrel}")
+  cd "${pkgbase}-v${pkgver}-${pkgrel}"
+  install -Dm644 xbkeeper.debug "${pkgdir}/usr/lib/debug/usr/bin/xbkeeper.debug"
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  install -Dm644 LICENSES/go-toml-MIT.txt "${pkgdir}/usr/share/licenses/${pkgname}/go-toml-MIT.txt"
+}
+`
+	if debugBody != debugWant {
+		t.Errorf("debug payload/dependency differs from symbols/licenses-only allowlist:\n%s", debugBody)
 	}
 }
 
@@ -185,10 +203,11 @@ func TestPackageConfigPayloadModes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, body, found := strings.Cut(string(pkg), "package() {\n")
+	_, body, found := strings.Cut(string(pkg), "package_xbkeeper() {\n")
 	if !found {
-		t.Fatal("missing package() body")
+		t.Fatal("missing package_xbkeeper() body")
 	}
+	body, _, _ = strings.Cut(body, "\npackage_xbkeeper-debug() {")
 	makefile, err := os.ReadFile("Makefile")
 	if err != nil {
 		t.Fatal(err)
@@ -225,9 +244,9 @@ func TestPackageConfigPayloadModes(t *testing.T) {
 		}
 	}
 	pkgdir := filepath.Join(root, "payload")
-	cmd := exec.Command("bash", "-e", "-c", "package() {\n"+body+"\npackage\n")
+	cmd := exec.Command("bash", "-e", "-c", "package_xbkeeper() {\n"+body+"\npackage_xbkeeper\n")
 	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "pkgname=xbkeeper", "pkgver="+pkgver, "pkgrel="+pkgrel, "pkgdir="+pkgdir)
+	cmd.Env = append(os.Environ(), "pkgname=xbkeeper", "pkgbase=xbkeeper", "pkgver="+pkgver, "pkgrel="+pkgrel, "pkgdir="+pkgdir)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("package() failed: %v: %s", err, output)
 	}

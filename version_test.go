@@ -27,23 +27,29 @@ func TestReleaseVersionContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const version = "v20260926-5"
+	const version = "v20260926-6"
 	if !strings.Contains(string(makefile), "VERSION := "+version+"\n") {
 		t.Fatal("Makefile must pin the full canonical version")
 	}
-	if !strings.Contains(string(pkg), "pkgver=20260926\npkgrel=5\n") {
+	if !strings.Contains(string(pkg), "pkgver=20260926\npkgrel=6\n") {
 		t.Fatal("Arch pkgver/pkgrel must match the pinned version")
 	}
 	for _, part := range []string{
 		`source=("${pkgname}-v${pkgver}-${pkgrel}.tar.gz")`,
 		`-ldflags "-X main.Version=v${pkgver}-${pkgrel}"`,
+		`pkgname=('xbkeeper' 'xbkeeper-debug')`,
+		`depends=("xbkeeper=${pkgver}-${pkgrel}")`,
+		`options=('!strip' '!debug' '!lto')`,
 	} {
 		if !strings.Contains(string(pkg), part) {
 			t.Errorf("PKGBUILD missing %s", part)
 		}
 	}
-	if got := strings.Count(string(pkg), `cd "${pkgname}-v${pkgver}-${pkgrel}"`); got != 3 {
-		t.Errorf("PKGBUILD must use the versioned source directory in build/check/package, got %d", got)
+	if got := strings.Count(string(pkg), `cd "${pkgname}-v${pkgver}-${pkgrel}"`); got != 2 {
+		t.Errorf("PKGBUILD must use versioned source in build/check, got %d", got)
+	}
+	if got := strings.Count(string(pkg), `cd "${pkgbase}-v${pkgver}-${pkgrel}"`); got != 2 {
+		t.Errorf("PKGBUILD must use versioned source in both split packages, got %d", got)
 	}
 	for _, part := range []string{
 		"DIST := dist/xbkeeper-$(VERSION).tar.gz",
@@ -92,17 +98,17 @@ func TestReleaseVersionContract(t *testing.T) {
 		name, tag, makeVersion, pkgver, pkgrel string
 		valid                                  bool
 	}{
-		{"current", version, version, "20260926", "5", true},
-		{"same-day-revision", "v20260926-6", "v20260926-6", "20260926", "6", true},
+		{"current", version, version, "20260926", "6", true},
+		{"same-day-revision", "v20260926-7", "v20260926-7", "20260926", "7", true},
 		{"invalid-date", "v20261399-1", "v20261399-1", "20261399", "1", false},
 		{"invalid-leap-day", "v20260229-1", "v20260229-1", "20260229", "1", false},
 		{"valid-leap-day", "v20280229-1", "v20280229-1", "20280229", "1", true},
 		{"old-semver", "v0.3.0", "v0.3.0", "0.3.0", "1", false},
 		{"zero-revision", "v20260926-0", "v20260926-0", "20260926", "0", false},
 		{"no-v-prefix", "20260926-1", "20260926-1", "20260926", "1", false},
-		{"mismatched-make", version, "v20260925-1", "20260926", "5", false},
-		{"mismatched-pkgver", version, version, "20260925", "5", false},
-		{"mismatched-pkgrel", version, version, "20260926", "4", false},
+		{"mismatched-make", version, "v20260925-1", "20260926", "6", false},
+		{"mismatched-pkgver", version, version, "20260925", "6", false},
+		{"mismatched-pkgrel", version, version, "20260926", "5", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -133,6 +139,38 @@ func TestReleaseVersionContract(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSplitPackageSrcinfoContract(t *testing.T) {
+	if _, err := os.Stat("packaging/arch/PKGBUILD"); os.IsNotExist(err) {
+		t.Skip("PKGBUILD is not included in the source distribution")
+	}
+	if _, err := exec.LookPath("makepkg"); err != nil {
+		t.Skip("makepkg unavailable")
+	}
+	cmd := exec.Command("makepkg", "--printsrcinfo")
+	cmd.Dir = "packaging/arch"
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("makepkg --printsrcinfo: %v: %s", err, out)
+	}
+	sections := strings.Split(string(out), "\npkgname = ")
+	if len(sections) != 3 || !strings.HasPrefix(sections[1], "xbkeeper\n") || !strings.HasPrefix(sections[2], "xbkeeper-debug\n") {
+		t.Fatalf("expected exactly two split packages: %s", out)
+	}
+	for _, field := range []string{"\tdepends = xtrabackup\n", "\tbackup = etc/xbkeeper/xbkeeper.toml\n", "\tbackup = etc/mysql/xbkeeper.cnf\n"} {
+		if !strings.Contains(sections[1], field) || strings.Contains(sections[2], field) {
+			t.Errorf("main-only field %q missing or leaked to debug", field)
+		}
+	}
+	if !strings.Contains(sections[2], "\tdepends = xbkeeper=20260926-6\n") || strings.Count(sections[2], "\tdepends = ") != 1 {
+		t.Errorf("debug package must depend only on exact main version: %s", sections[2])
+	}
+	for _, option := range []string{"\toptions = !strip\n", "\toptions = !debug\n"} {
+		if !strings.Contains(sections[0], option) {
+			t.Errorf("explicit split must disable automatic debug/strip: %s", out)
+		}
 	}
 }
 
@@ -172,11 +210,22 @@ func TestReleasePublicationContract(t *testing.T) {
 		"xbkeeper-$VERSION-linux-amd64.tar.gz",
 		"xbkeeper-$VERSION-linux-arm64.tar.gz",
 		"xbkeeper-${VERSION#v}-x86_64.pkg.tar.zst",
+		"xbkeeper-debug-${VERSION#v}-x86_64.pkg.tar.zst",
+		`grep -Fx "depend = xbkeeper=${VERSION#v}"`,
 		"sha256sum --check SHA256SUMS",
 		"gh release create \"$VERSION\" --verify-tag",
 	} {
 		if !strings.Contains(string(release), part) {
 			t.Errorf("release workflow missing %q", part)
+		}
+	}
+	archScript, err := os.ReadFile(".github/scripts/build-arch-package.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, part := range []string{"test -s \"$main\" && test -s \"$debug\"", "depend = xbkeeper=${1#v}", "test-arch-transaction.sh", `tar -cf - "$main" "$debug"`} {
+		if !strings.Contains(string(archScript), part) {
+			t.Errorf("Arch build script missing %q", part)
 		}
 	}
 	publisher := strings.SplitN(string(release), "  publish:\n", 2)
@@ -221,7 +270,7 @@ func TestReleasePinnedChecksum(t *testing.T) {
 				}
 			}
 			payload := []byte("fixture source archive")
-			if err := os.WriteFile(filepath.Join(dir, "dist/xbkeeper-v20260926-5.tar.gz"), payload, 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "dist/xbkeeper-v20260926-6.tar.gz"), payload, 0600); err != nil {
 				t.Fatal(err)
 			}
 			sum := fmt.Sprintf("%x", sha256.Sum256(payload))
@@ -233,7 +282,7 @@ func TestReleasePinnedChecksum(t *testing.T) {
 			}
 			cmd := exec.Command("bash", "-c", strings.Join(lines, "\n"))
 			cmd.Dir = dir
-			cmd.Env = append(os.Environ(), "VERSION=v20260926-5")
+			cmd.Env = append(os.Environ(), "VERSION=v20260926-6")
 			output, err := cmd.CombinedOutput()
 			if (err == nil) != valid {
 				t.Fatalf("valid=%t: %v: %s", valid, err, output)

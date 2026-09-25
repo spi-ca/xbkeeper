@@ -94,7 +94,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: Build verified Arch package
+      - name: Build and transaction-test both Arch packages
         env:
           VERSION: ${{ github.ref_name }}
         shell: bash
@@ -136,11 +136,16 @@ jobs:
             "xbkeeper-$VERSION-linux-amd64.tar.gz"
             "xbkeeper-$VERSION-linux-arm64.tar.gz"
             "xbkeeper-${VERSION#v}-x86_64.pkg.tar.zst"
+            "xbkeeper-debug-${VERSION#v}-x86_64.pkg.tar.zst"
           )
           cd dist
           for file in "${files[@]}"; do test -s "$file"; done
+          debug_info="$(tar --zstd -xOf "xbkeeper-debug-${VERSION#v}-x86_64.pkg.tar.zst" .PKGINFO)"
+          grep -Fx "pkgname = xbkeeper-debug" <<< "$debug_info"
+          grep -Fx "depend = xbkeeper=${VERSION#v}" <<< "$debug_info"
+          test "$(grep -c '^depend = ' <<< "$debug_info")" -eq 1
           sha256sum "${files[@]}" > SHA256SUMS
           sha256sum --check SHA256SUMS
           gh release create "$VERSION" --verify-tag --title "$VERSION" \
-            --notes 'Static Linux amd64/arm64 binaries, source archive, and an Arch x86_64 package. Arch build used makepkg --nodeps in an isolated container; dependency installation and live backup/restore compatibility are not verified.' \
+            --notes 'Static Linux amd64/arm64 binaries, source archive, and paired Arch x86_64 main/debug packages. The debug package depends on the exact main version; Arch build used makepkg --nodeps and isolated local transaction fixtures. Live backup/restore compatibility is not verified.' \
             "${files[@]}" SHA256SUMS
