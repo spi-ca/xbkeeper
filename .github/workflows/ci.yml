@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -15,7 +17,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       # actions/checkout v4.2.2
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -40,3 +42,25 @@ jobs:
         run: |
           make build
           ./build/xbkeeper version
+      - name: Build release source and Linux binaries (no publication)
+        shell: bash
+        run: VERSION="$(sed -n 's/^VERSION := //p' Makefile)" bash .github/scripts/build-release-assets.sh
+
+  arch-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      # actions/checkout v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      # actions/setup-go v5.0.2
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Build Arch package in disposable container (no publication)
+        shell: bash
+        run: |
+          VERSION="$(sed -n 's/^VERSION := //p' Makefile)" bash .github/scripts/build-release-assets.sh
+          VERSION="$(sed -n 's/^VERSION := //p' Makefile)" bash .github/scripts/build-arch-package.sh

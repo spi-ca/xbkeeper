@@ -6,6 +6,13 @@ A small Linux-only full-backup wrapper for Percona XtraBackup. It runs one backu
 
 The pinned source, binary and release-tag version is `v20260926-4` (date and positive same-day revision); it does not change automatically on each build. A further release on the same date increments the revision. Arch maps this to `pkgver=20260926`, `pkgrel=4`. Keep the source archive and binary version identical to the full tag; a release tag must match the pinned source and Arch recipe. No tag or release is created by building locally.
 
+PR and main CI test release builds without publishing. After review and green
+main CI, a matching tag at the current main tip triggers source, static Linux
+amd64/arm64 and isolated Arch x86_64 builds. The tag workflow publishes a
+GitHub release with those four archives and `SHA256SUMS` only after tests,
+source/checksum validation and packaging succeed. Arch's `--nodeps` build does
+not verify dependency installation or live backup/restore compatibility.
+
 Requires Go 1.24+ and an installed compatible XtraBackup. Build with `go build -o xbkeeper .`; check with `go test ./...`, `go test -race ./...`, and `go vet ./...`. Building from source does not install or activate anything. The Arch package
 includes the binary, a generic private `/etc/xbkeeper/xbkeeper.toml`, a
 comment-only MySQL option template at `/etc/mysql/xbkeeper.cnf`, documentation

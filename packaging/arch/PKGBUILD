@@ -11,7 +11,7 @@ backup=('etc/xbkeeper/xbkeeper.toml' 'etc/mysql/xbkeeper.cnf')
 # Local source distribution generated with `make dist` at the repository root.
 # No public upstream URL is assumed before this repository is published.
 source=("${pkgname}-v${pkgver}-${pkgrel}.tar.gz")
-sha256sums=('4dc851defe1b5bc4759162c9db74ab1074bf377cc2cb888a18267d7ea9bad47b')
+sha256sums=('8a408fe5f1e4e1c7bfbdcbb2d032d785b0bc79a779c41ae6a511e79630477af0')
 
 build() {
   cd "${pkgname}-v${pkgver}-${pkgrel}"

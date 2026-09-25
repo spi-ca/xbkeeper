@@ -1,6 +1,12 @@
 # Arch package build
 
-This is a local source-archive package, not an AUR publication or remote release.
+This is a local source-archive package, not an AUR publication. On a reviewed
+matching tag at the current main tip, the release workflow builds it in an
+isolated Arch container and publishes it with the source archive, Linux
+amd64/arm64 static binaries and SHA256SUMS as a GitHub release. PR/main CI
+builds the same artifacts without publishing. The container runs
+`makepkg --nodeps`; it does not verify a dependency transaction or live
+backup/restore compatibility.
 The package installs `/usr/bin/xbkeeper`, its BSD-3-Clause license, the linked
 TOML parser's MIT license, the generic default config at
 `/etc/xbkeeper/xbkeeper.toml` (root-owned file mode 0600 in a mode 0700

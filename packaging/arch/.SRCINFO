@@ -12,6 +12,6 @@ pkgbase = xbkeeper
 	backup = etc/xbkeeper/xbkeeper.toml
 	backup = etc/mysql/xbkeeper.cnf
 	source = xbkeeper-v20260926-4.tar.gz
-	sha256sums = 4dc851defe1b5bc4759162c9db74ab1074bf377cc2cb888a18267d7ea9bad47b
+	sha256sums = 8a408fe5f1e4e1c7bfbdcbb2d032d785b0bc79a779c41ae6a511e79630477af0
 
 pkgname = xbkeeper

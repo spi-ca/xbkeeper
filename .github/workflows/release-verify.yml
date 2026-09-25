@@ -14,12 +14,16 @@ concurrency:
 jobs:
   package:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       # actions/checkout v4.2.2
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Require tag at current main tip
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$(git rev-parse refs/remotes/origin/main)"
       # actions/setup-go v5.0.2
       - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
         with:
@@ -67,11 +71,76 @@ jobs:
           set -euo pipefail
           expected="$(sed -n "s/^sha256sums=('\([0-9a-f]\{64\}\)')$/\1/p" packaging/arch/PKGBUILD)"
           test "$expected" = "$(sha256sum "dist/xbkeeper-$VERSION.tar.gz" | cut -d ' ' -f1)"
+      - name: Build Linux release archives
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash .github/scripts/build-release-assets.sh
       # actions/upload-artifact v4.6.2
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: xbkeeper-${{ steps.version.outputs.version }}-source
           path: |
             dist/xbkeeper-${{ steps.version.outputs.version }}.tar.gz
-            dist/SHA256SUMS
+            dist/xbkeeper-${{ steps.version.outputs.version }}-linux-amd64.tar.gz
+            dist/xbkeeper-${{ steps.version.outputs.version }}-linux-arm64.tar.gz
           if-no-files-found: error
+
+  arch-package:
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      # actions/checkout v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Build verified Arch package
+        env:
+          VERSION: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          make dist
+          bash .github/scripts/build-arch-package.sh
+      # actions/upload-artifact v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: xbkeeper-${{ github.ref_name }}-arch
+          path: dist/xbkeeper-*-x86_64.pkg.tar.zst
+          if-no-files-found: error
+
+  publish:
+    needs: [package, arch-package]
+    if: github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # actions/download-artifact v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: xbkeeper-${{ github.ref_name }}-*
+          path: dist
+          merge-multiple: true
+      - name: Verify complete release set and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^v[0-9]{8}-[1-9][0-9]*$ ]]
+          files=(
+            "xbkeeper-$VERSION.tar.gz"
+            "xbkeeper-$VERSION-linux-amd64.tar.gz"
+            "xbkeeper-$VERSION-linux-arm64.tar.gz"
+            "xbkeeper-${VERSION#v}-x86_64.pkg.tar.zst"
+          )
+          cd dist
+          for file in "${files[@]}"; do test -s "$file"; done
+          sha256sum "${files[@]}" > SHA256SUMS
+          sha256sum --check SHA256SUMS
+          gh release create "$VERSION" --verify-tag --title "$VERSION" \
+            --notes 'Static Linux amd64/arm64 binaries, source archive, and an Arch x86_64 package. Arch build used makepkg --nodeps in an isolated container; dependency installation and live backup/restore compatibility are not verified.' \
+            "${files[@]}" SHA256SUMS

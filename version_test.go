@@ -136,6 +136,55 @@ func TestReleaseVersionContract(t *testing.T) {
 	}
 }
 
+func TestReleasePublicationContract(t *testing.T) {
+	ci, err := os.ReadFile(".github/workflows/ci.yml")
+	if os.IsNotExist(err) {
+		t.Skip("workflows are not in the source distribution")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := os.ReadFile(".github/workflows/release-verify.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, part := range []string{
+		"  pull_request:\n    branches: [main]",
+		"  push:\n    branches: [main]",
+		"  contents: read",
+		"bash .github/scripts/build-release-assets.sh",
+		"bash .github/scripts/build-arch-package.sh",
+	} {
+		if !strings.Contains(string(ci), part) {
+			t.Errorf("CI missing %q", part)
+		}
+	}
+	for _, part := range []string{
+		"    tags: ['v*']",
+		"  contents: read",
+		"git rev-parse refs/remotes/origin/main",
+		"    needs: package",
+		"    needs: [package, arch-package]",
+		// Arch filenames omit the leading v used by the release tag.
+		"          path: dist/xbkeeper-*-x86_64.pkg.tar.zst",
+		"    if: github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')",
+		"    permissions:\n      contents: write",
+		"xbkeeper-$VERSION-linux-amd64.tar.gz",
+		"xbkeeper-$VERSION-linux-arm64.tar.gz",
+		"xbkeeper-${VERSION#v}-x86_64.pkg.tar.zst",
+		"sha256sum --check SHA256SUMS",
+		"gh release create \"$VERSION\" --verify-tag",
+	} {
+		if !strings.Contains(string(release), part) {
+			t.Errorf("release workflow missing %q", part)
+		}
+	}
+	publisher := strings.SplitN(string(release), "  publish:\n", 2)
+	if len(publisher) != 2 || strings.Contains(publisher[0], "contents: write") || !strings.Contains(publisher[1], "contents: write") {
+		t.Error("only the publisher may request write permissions")
+	}
+}
+
 func TestReleasePinnedChecksum(t *testing.T) {
 	workflow, err := os.ReadFile(".github/workflows/release-verify.yml")
 	if os.IsNotExist(err) {
@@ -148,7 +197,7 @@ func TestReleasePinnedChecksum(t *testing.T) {
 	if !ok {
 		t.Fatal("missing pinned checksum step")
 	}
-	section, _, ok = strings.Cut(section, "      # actions/upload-artifact")
+	section, _, ok = strings.Cut(section, "      - name: Build Linux release archives\n")
 	if !ok {
 		t.Fatal("missing checksum step boundary")
 	}
