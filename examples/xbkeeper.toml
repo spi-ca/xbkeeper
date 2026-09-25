@@ -1,0 +1,14 @@
+# Copy and adapt manually to /etc/xbkeeper/xbkeeper.toml (root:root 0600).
+# Create the backup directory first, root-owned mode 0700.
+backup_dir = "/var/backups/xtrabackup"
+# MySQL data directory and local Unix socket.
+datadir = "/var/lib/mysql"
+socket = "/run/mysqld/mysqld.sock"
+# External private MySQL option file, root-owned mode 0600. No credentials here.
+defaults_file = "/etc/mysql/xbkeeper.cnf"
+# Number of completed prepared backups retained after a new success.
+keep = 3
+# Free-space reserve in bytes (10 GiB), in addition to datadir allocation.
+min_free_bytes = 10_737_418_240
+# Optional: default is /usr/bin/xtrabackup.
+xtrabackup = "/usr/bin/xtrabackup"

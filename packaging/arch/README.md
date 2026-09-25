@@ -1,11 +1,12 @@
 # Arch package build
 
 This is a local source-archive package, not an AUR publication or remote release.
-The package installs `/usr/bin/xbkeeper`, its BSD-3-Clause license, relevant
+The package installs `/usr/bin/xbkeeper`, its BSD-3-Clause license, the linked
+TOML parser's MIT license, inactive examples under `/usr/share/doc/xbkeeper/examples/`, relevant
 documentation and the canonical `xbkeeper.service`/`xbkeeper.timer` (mode 0644)
 in `/usr/lib/systemd/system`. It does not create a DB account, install
 credentials/configuration, provision directories, enable/start a timer, run an
-install hook or delete backups on removal. Host JSON, prerequisites and deployment
+install hook or delete backups on removal. Host TOML config, prerequisites and deployment
 instructions remain in `~/Codebase/kubernetes-manifests/03-arch-systemd/xbkeeper/`.
 The [unit migration plan](../../docs/systemd-migration.md) records the handoff.
 
@@ -28,23 +29,37 @@ makepkg -srf
 sandbox**; `-r` removes dependencies installed by makepkg after a successful
 build, and `-f` permits replacing an existing package artifact. Review the
 transaction; these are not commands to run on a production DB host casually.
-Tests invoke a fake XtraBackup, never a database. No automatic package install
-(`-i`) is used.
+Tests invoke a fake XtraBackup, never a database. Normal builds resolve the
+pinned `github.com/pelletier/go-toml/v2` module (see `go.mod`/`go.sum`);
+prefetch and verify it separately for offline builds. No automatic package
+install (`-i`) is used.
 
 `make dist` uses deterministic archive timestamps, owner IDs, regular-file modes
 (0644) and gzip headers, and copies the archive next to `PKGBUILD` for makepkg's
 local-source lookup. Source file permissions/umask do not change its checksum.
-The checked-in SHA-256 covers this exact source snapshot. After intentionally
-changing source files, bump the version/release as appropriate, regenerate the
-archive, review `makepkg -g`, update `sha256sums` in `PKGBUILD`, then regenerate
-`.SRCINFO` with `makepkg --printsrcinfo > .SRCINFO`. Do not bypass a mismatch with
-`--skipchecksums`. Keep the Makefile version and `pkgver` synchronized.
+The canonical pinned version is `v20260926-1`: the release tag, Makefile
+`VERSION`, source archive directory/name and binary `version` output use the
+full `vYYYYMMDD-N` string. Arch splits it into `pkgver=20260926` and
+`pkgrel=1`. A second release on the same day uses `v20260926-2`,
+`pkgver=20260926`, `pkgrel=2` and a **new matching source archive** named
+`xbkeeper-v20260926-2.tar.gz`; never bump only `pkgrel` while reusing the
+previous source version/archive. Versions are pinned, not generated from the
+build date. After intentionally changing source files, update all version
+fields, regenerate the archive, review `makepkg -g`, update `sha256sums` in
+`PKGBUILD`, then regenerate `.SRCINFO` with
+`makepkg --printsrcinfo > .SRCINFO`. Do not bypass a mismatch with
+`--skipchecksums`. The pinned checksum and `.SRCINFO` must match the finalized
+source snapshot before package verification or building.
 
 ## Isolated offline verification
 
 A pre-existing Arch `base-devel` container image can verify packaging without
 installing packages on the host. Run it with networking disabled, a read-only
-source mount, an isolated writable working copy, and a trusted Go toolchain.
+source mount, an isolated writable working copy, a trusted Go toolchain and a
+read-only, checksum-verified Go module download cache (including go-toml/v2
+v2.3.0). Copy the cached module downloads into an isolated writable `GOMODCACHE`
+so Go can unpack them without changing the host cache. Set `GOPROXY=off`; without
+the module the offline build fails rather than disabling sum checks.
 `makepkg --nodeps` is appropriate **only for this controlled verification** when
 Go is supplied outside pacman and the tests do not require installed XtraBackup.
 It does not prove that dependency resolution works on a fresh Arch system.
@@ -58,7 +73,7 @@ does not establish real backup or restore correctness.
 ## Separate host migration and activation
 
 The service runs as root with a private umask, reads
-`/etc/xbkeeper/xbkeeper.json`, and can write only to `/var/backups/xtrabackup`
+`/etc/xbkeeper/xbkeeper.toml`, and can write only to `/var/backups/xtrabackup`
 under its filesystem sandbox. A custom backup root needs an explicit, reviewed
 systemd drop-in that resets `ReadWritePaths=` before adding the new directory.
 `After=mysqld.service` orders the service; it neither starts nor restarts MySQL.

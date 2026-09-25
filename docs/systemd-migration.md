@@ -16,13 +16,14 @@ authorized by this change.
   timeout, control-group kill, sandbox and AF_UNIX-only connection policy.
 - Preserve daily 03:00 host-local scheduling and Persistent=true. Enabling after
   a missed schedule may run immediately; activation remains a separate approval.
-- Default config path remains `/etc/xbkeeper/xbkeeper.json`. Writable backup root
-  remains `/var/backups/xtrabackup`; custom destinations require an explicit
+- TOML migration updates the originally recorded JSON path; default config path
+  is now `/etc/xbkeeper/xbkeeper.toml`. Writable backup root remains
+  `/var/backups/xtrabackup`; custom destinations require an explicit
   drop-in resetting ReadWritePaths before adding the new path. Do not weaken
   filesystem protection or auto-create credentials/data directories.
 - After=mysqld.service is ordering only. Do not add Wants/Requires or restart DB
   services. No ConditionPathExists to turn missing prerequisites into a skip.
-- Host JSON, authentication, capacity, backup/restore validation and deployment
+- Host TOML configuration, authentication, capacity, backup/restore validation and deployment
   instructions remain in kubernetes-manifests. Remove only its two duplicate unit
   sources after their exact behavior is covered in xbkeeper tests.
 
@@ -34,14 +35,15 @@ authorized by this change.
    distribution; keep CLI code and unrelated existing work unchanged.
 3. Update Arch packaging and both repositories' ownership/install documentation.
    The manifests repository is maintained separately: remove its duplicate unit
-   sources only after migrating their assertions; keep host JSON contract tests
+   sources only after migrating their assertions; keep host configuration contract tests
    and assert no duplicate units remain.
-4. Preserve the completed 0.2.0 integrity implementation; never rebuild from the
-   stale 0.1 archive or revert existing code. Increment the package release for
-   the added units, regenerate the 0.2.0 source archive and verify that it contains
-   integrity sources/tests plus the new units before pinning its checksum.
-   Keep package version, source filename, checksum and .SRCINFO consistent; do
-   not publish or imply a release occurred. Never bypass checksums.
+4. This records the prior unit-migration handoff: preserve the completed 0.2.0
+   integrity implementation and never rebuild from the stale 0.1 archive. The
+   subsequent TOML migration initially bumped the source to 0.3.0; the current
+   pinned source version is v20260926-1. Keep its archive, checksum and .SRCINFO
+   synchronized whenever the source snapshot changes.
+   Verify archive contents include integrity sources/tests, new units, TOML
+   examples and module sums. Never bypass checksums or imply a release occurred.
 5. Run Go tests/race/vet, source verification and source archive content checks,
    systemd unit syntax verification and calendar parsing. Do not start services.
    Verify package payload in an isolated build where available, otherwise state

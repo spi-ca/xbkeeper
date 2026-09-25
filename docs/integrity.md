@@ -42,8 +42,8 @@ consistency validation or automated repair.
 ## CLI contract
 
 ```sh
-xbkeeper verify --config /etc/xbkeeper/xbkeeper.json
-xbkeeper verify --config /etc/xbkeeper/xbkeeper.json --backup backup-UTC-RANDOM
+xbkeeper verify --config /etc/xbkeeper/xbkeeper.toml
+xbkeeper verify --config /etc/xbkeeper/xbkeeper.toml --backup backup-UTC-RANDOM
 ```
 
 Without `--backup`, check every managed completed backup. With it, accept only an

@@ -25,13 +25,13 @@ const maxLog = 1 << 20
 var managedName = regexp.MustCompile(`^(backup|\.inprogress)-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}$`)
 
 type config struct {
-	BackupDir    string `json:"backup_dir"`
-	Datadir      string `json:"datadir"`
-	Socket       string `json:"socket"`
-	DefaultsFile string `json:"defaults_file"`
-	Keep         int    `json:"keep"`
-	MinFreeBytes int64  `json:"min_free_bytes"`
-	Xtrabackup   string `json:"xtrabackup"`
+	BackupDir    string `toml:"backup_dir"`
+	Datadir      string `toml:"datadir"`
+	Socket       string `toml:"socket"`
+	DefaultsFile string `toml:"defaults_file"`
+	Keep         int    `toml:"keep"`
+	MinFreeBytes int64  `toml:"min_free_bytes"`
+	Xtrabackup   string `toml:"xtrabackup"`
 }
 type metadata struct {
 	Format            int    `json:"format"`

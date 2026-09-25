@@ -32,10 +32,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          version="${RELEASE_TAG#v}"
+          [[ "$RELEASE_TAG" =~ ^v[0-9]{8}-[1-9][0-9]*$ ]]
+          version="$RELEASE_TAG"
+          pkgver="$(sed -n 's/^pkgver=//p' packaging/arch/PKGBUILD)"
+          pkgrel="$(sed -n 's/^pkgrel=//p' packaging/arch/PKGBUILD)"
           test "$(sed -n 's/^VERSION := //p' Makefile)" = "$version"
-          test "$(sed -n 's/^pkgver=//p' packaging/arch/PKGBUILD)" = "$version"
+          test "$version" = "v${pkgver}-${pkgrel}"
+          release_date="${pkgver:0:4}-${pkgver:4:2}-${pkgver:6:2}"
+          test "$(date -u -d "$release_date" +%Y%m%d)" = "$pkgver"
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
       - name: Test, race check and vet
         run: make test
@@ -55,6 +59,14 @@ jobs:
           tar -xzf "dist/xbkeeper-$VERSION.tar.gz" -C "$unpacked"
           make -C "$unpacked/xbkeeper-$VERSION" test build
           test "$("$unpacked/xbkeeper-$VERSION/build/xbkeeper" version)" = "$VERSION"
+      - name: Verify pinned Arch source checksum
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(sed -n "s/^sha256sums=('\([0-9a-f]\{64\}\)')$/\1/p" packaging/arch/PKGBUILD)"
+          test "$expected" = "$(sha256sum "dist/xbkeeper-$VERSION.tar.gz" | cut -d ' ' -f1)"
       # actions/upload-artifact v4.6.2
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

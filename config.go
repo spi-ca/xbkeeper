@@ -14,6 +14,8 @@ import (
 	"reflect"
 	"strings"
 	"syscall"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 func pathInfo(path string) (fs.FileInfo, error) {
@@ -108,8 +110,25 @@ func loadConfig(path string) (config, error) {
 	if len(b) > 64*1024 {
 		return c, errors.New("config too large")
 	}
-	if err := strictJSON(b, &c); err != nil {
-		return c, fmt.Errorf("config JSON: %w", err)
+	// Struct field matching is case-insensitive, so validate exact top-level
+	// keys independently before strict decoding into the typed destination.
+	var fields map[string]any
+	if err := toml.Unmarshal(b, &fields); err != nil {
+		return c, errors.New("invalid config TOML")
+	}
+	allowed := map[string]bool{
+		"backup_dir": true, "datadir": true, "socket": true,
+		"defaults_file": true, "keep": true, "min_free_bytes": true,
+		"xtrabackup": true,
+	}
+	for key := range fields {
+		if !allowed[key] {
+			return c, errors.New("unknown or incorrectly cased config field")
+		}
+	}
+	if err := toml.NewDecoder(bytes.NewReader(b)).DisallowUnknownFields().Decode(&c); err != nil {
+		// Decoder errors may echo private config values.
+		return c, errors.New("invalid config TOML")
 	}
 	if c.Xtrabackup == "" {
 		c.Xtrabackup = "/usr/bin/xtrabackup"

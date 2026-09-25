@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 type fixture struct {
@@ -81,14 +83,14 @@ exit 48
 		t.Fatal(err)
 	}
 	c := config{BackupDir: filepath.Join(base, "backups"), Datadir: filepath.Join(base, "data"), Socket: sock, DefaultsFile: cred, Keep: 1, MinFreeBytes: 0, Xtrabackup: bin}
-	file := filepath.Join(base, "config.json")
+	file := filepath.Join(base, "config.toml")
 	f := fixture{c: c, file: file, base: base, socket: l}
 	f.save(t)
 	return f
 }
 func (f fixture) save(t *testing.T) {
 	t.Helper()
-	b, err := json.Marshal(f.c)
+	b, err := toml.Marshal(f.c)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,35 +1,39 @@
 pkgname=xbkeeper
-pkgver=0.2.0
-pkgrel=2
+pkgver=20260926
+pkgrel=1
 pkgdesc='Small local full-backup and retention manager for Percona XtraBackup'
 arch=('x86_64' 'aarch64')
-license=('BSD-3-Clause')
+license=('BSD-3-Clause' 'MIT')
 depends=('xtrabackup')
 makedepends=('go>=1.24')
 options=('!lto')
 # Local source distribution generated with `make dist` at the repository root.
 # No public upstream URL is assumed before this repository is published.
-source=("${pkgname}-${pkgver}.tar.gz")
-sha256sums=('b9c28bb964490f2939418c0f0ad221a0653780413be5ba4b8e3dcac6ea7f1346')
+source=("${pkgname}-v${pkgver}-${pkgrel}.tar.gz")
+sha256sums=('29fbe4e214dfb69564ef2421bc344ab407e3b2d6982e3b19e1e8ba87c566d140')
 
 build() {
-  cd "${pkgname}-${pkgver}"
+  cd "${pkgname}-v${pkgver}-${pkgrel}"
   CGO_ENABLED=0 go build -trimpath -buildvcs=false \
-    -ldflags "-X main.Version=${pkgver}" -o xbkeeper .
+    -ldflags "-X main.Version=v${pkgver}-${pkgrel}" -o xbkeeper .
 }
 
 check() {
-  cd "${pkgname}-${pkgver}"
+  cd "${pkgname}-v${pkgver}-${pkgrel}"
   go test ./...
 }
 
 package() {
-  cd "${pkgname}-${pkgver}"
+  cd "${pkgname}-v${pkgver}-${pkgrel}"
   install -Dm755 xbkeeper "${pkgdir}/usr/bin/xbkeeper"
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  install -Dm644 LICENSES/go-toml-MIT.txt "${pkgdir}/usr/share/licenses/${pkgname}/go-toml-MIT.txt"
   install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
   install -Dm644 docs/integrity.md "${pkgdir}/usr/share/doc/${pkgname}/docs/integrity.md"
   install -Dm644 docs/systemd-migration.md "${pkgdir}/usr/share/doc/${pkgname}/docs/systemd-migration.md"
+  install -Dm644 docs/toml-migration.md "${pkgdir}/usr/share/doc/${pkgname}/docs/toml-migration.md"
+  install -Dm644 examples/xbkeeper.toml "${pkgdir}/usr/share/doc/${pkgname}/examples/xbkeeper.toml"
+  install -Dm644 examples/README.md "${pkgdir}/usr/share/doc/${pkgname}/examples/README.md"
   install -Dm644 packaging/arch/README.md \
     "${pkgdir}/usr/share/doc/${pkgname}/packaging/arch/README.md"
   install -Dm644 packaging/systemd/xbkeeper.service "${pkgdir}/usr/lib/systemd/system/xbkeeper.service"

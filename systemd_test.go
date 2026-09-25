@@ -77,7 +77,7 @@ func TestPackagedServiceContract(t *testing.T) {
 	assertUnitSection(t, unit, "Service", map[string]string{
 		"Type": "oneshot",
 		"User": "root", "Group": "root", "UMask": "0077",
-		"ExecStart":       "/usr/bin/xbkeeper backup --config /etc/xbkeeper/xbkeeper.json",
+		"ExecStart":       "/usr/bin/xbkeeper backup --config /etc/xbkeeper/xbkeeper.toml",
 		"TimeoutStartSec": "6h", "TimeoutStopSec": "2min",
 		"KillMode": "control-group", "ProtectSystem": "strict",
 		"ReadWritePaths": "/var/backups/xtrabackup",
@@ -111,8 +111,8 @@ func TestPackageInstallsUnitsWithoutActivationOrProvisioning(t *testing.T) {
 		t.Fatal(err)
 	}
 	pkg := string(content)
-	if !strings.Contains(pkg, "pkgver=0.2.0\npkgrel=2\n") {
-		t.Error("package must remain version 0.2.0, release 2")
+	if !strings.Contains(pkg, "pkgver=20260926\npkgrel=1\n") {
+		t.Error("package must be version 20260926, release 1")
 	}
 	if strings.Contains(pkg, "install=") || strings.Contains(pkg, ".install") {
 		t.Error("package must not use an install hook")
@@ -122,13 +122,17 @@ func TestPackageInstallsUnitsWithoutActivationOrProvisioning(t *testing.T) {
 		t.Fatal("missing package() body")
 	}
 	// Each payload install is explicit. Nothing creates config, credential or
-	// backup directories, starts/enables units, or installs host JSON.
-	want := `  cd "${pkgname}-${pkgver}"
+	// backup directories, starts/enables units, or installs active host config.
+	want := `  cd "${pkgname}-v${pkgver}-${pkgrel}"
   install -Dm755 xbkeeper "${pkgdir}/usr/bin/xbkeeper"
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  install -Dm644 LICENSES/go-toml-MIT.txt "${pkgdir}/usr/share/licenses/${pkgname}/go-toml-MIT.txt"
   install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
   install -Dm644 docs/integrity.md "${pkgdir}/usr/share/doc/${pkgname}/docs/integrity.md"
   install -Dm644 docs/systemd-migration.md "${pkgdir}/usr/share/doc/${pkgname}/docs/systemd-migration.md"
+  install -Dm644 docs/toml-migration.md "${pkgdir}/usr/share/doc/${pkgname}/docs/toml-migration.md"
+  install -Dm644 examples/xbkeeper.toml "${pkgdir}/usr/share/doc/${pkgname}/examples/xbkeeper.toml"
+  install -Dm644 examples/README.md "${pkgdir}/usr/share/doc/${pkgname}/examples/README.md"
   install -Dm644 packaging/arch/README.md \
     "${pkgdir}/usr/share/doc/${pkgname}/packaging/arch/README.md"
   install -Dm644 packaging/systemd/xbkeeper.service "${pkgdir}/usr/lib/systemd/system/xbkeeper.service"

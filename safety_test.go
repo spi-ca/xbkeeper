@@ -14,15 +14,38 @@ import (
 	"time"
 )
 
-func TestStrictJSONCaseAndNoLeakedInput(t *testing.T) {
+func TestStrictTOMLCaseAndNoLeakedInput(t *testing.T) {
 	f := setup(t)
-	for _, data := range []string{`{"Keep":1,"password":"secret-value"}`, `{"keep":1,"Keep":2}`, `{"keep":1,"KEEP":2}`, `{"keep":1,"keep":2}`, `{"keep":"secret-value"}`} {
+	original, err := os.ReadFile(f.file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := invoke(t, f, "status"); err != nil {
+		t.Fatalf("baseline status: %v", err)
+	}
+	if !strings.Contains(string(original), "keep = 1\n") {
+		t.Fatal("fixture missing keep field")
+	}
+	for _, data := range []string{
+		string(original) + "Keep = 'secret-value'\n",
+		string(original) + "password = 'secret-value'\n",
+		strings.Replace(string(original), "keep = 1\n", "keep = 'secret-value'\n", 1),
+	} {
 		if err := os.WriteFile(f.file, []byte(data), 0600); err != nil {
 			t.Fatal(err)
 		}
 		_, err := invoke(t, f, "status")
 		if err == nil || strings.Contains(err.Error(), "secret-value") || !strings.Contains(err.Error(), "config") {
 			t.Fatalf("%s: %v", data, err)
+		}
+	}
+}
+
+func TestStrictJSONMetadataUnchanged(t *testing.T) {
+	for _, data := range []string{`{"format":2,"format":1}`, `{"Format":2}`, `{"unknown":"secret-value"}`, `{"format":"secret-value"}`} {
+		var m metadata
+		if err := strictJSON([]byte(data), &m); err == nil {
+			t.Fatalf("metadata JSON accepted: %s", data)
 		}
 	}
 }
