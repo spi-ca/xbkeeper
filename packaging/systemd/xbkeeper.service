@@ -1,0 +1,19 @@
+[Unit]
+Description=Create and prepare a local full MySQL backup with xbkeeper
+After=mysqld.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/bin/xbkeeper backup --config /etc/xbkeeper/xbkeeper.json
+TimeoutStartSec=6h
+TimeoutStopSec=2min
+KillMode=control-group
+ProtectSystem=strict
+ReadWritePaths=/var/backups/xtrabackup
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+RestrictAddressFamilies=AF_UNIX

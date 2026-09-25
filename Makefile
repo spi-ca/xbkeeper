@@ -1,7 +1,7 @@
 VERSION := 0.2.0
 GO ?= go
 DIST := dist/xbkeeper-$(VERSION).tar.gz
-SOURCES := go.mod $(sort $(wildcard *.go)) README.md LICENSE Makefile docs/integrity.md packaging/arch/README.md
+SOURCES := go.mod $(sort $(wildcard *.go)) README.md LICENSE Makefile docs/integrity.md docs/systemd-migration.md packaging/arch/README.md packaging/systemd/xbkeeper.service packaging/systemd/xbkeeper.timer
 
 .PHONY: build test dist clean
 build:
@@ -15,7 +15,7 @@ test:
 
 dist:
 	mkdir -p dist
-	bash -o pipefail -ec 'tmp="$(DIST).tmp"; trap '\''rm -f "$$tmp"'\'' EXIT; tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --transform="s,^,xbkeeper-$(VERSION)/," -cf - $(SOURCES) | gzip -n > "$$tmp"; mv "$$tmp" "$(DIST)"'
+	bash -o pipefail -ec 'tmp="$(DIST).tmp"; trap '\''rm -f "$$tmp"'\'' EXIT; tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=0644 --transform="s,^,xbkeeper-$(VERSION)/," -cf - $(SOURCES) | gzip -n > "$$tmp"; mv "$$tmp" "$(DIST)"'
 	cp $(DIST) packaging/arch/
 	sha256sum $(DIST)
 

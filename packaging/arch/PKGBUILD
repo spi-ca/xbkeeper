@@ -1,6 +1,6 @@
 pkgname=xbkeeper
 pkgver=0.2.0
-pkgrel=1
+pkgrel=2
 pkgdesc='Small local full-backup and retention manager for Percona XtraBackup'
 arch=('x86_64' 'aarch64')
 license=('BSD-3-Clause')
@@ -10,7 +10,7 @@ options=('!lto')
 # Local source distribution generated with `make dist` at the repository root.
 # No public upstream URL is assumed before this repository is published.
 source=("${pkgname}-${pkgver}.tar.gz")
-sha256sums=('d5c9cc2ba4753fb94996c220298d678c7ba33499000725ab7c5cd612dcd2ad20')
+sha256sums=('b9c28bb964490f2939418c0f0ad221a0653780413be5ba4b8e3dcac6ea7f1346')
 
 build() {
   cd "${pkgname}-${pkgver}"
@@ -29,6 +29,9 @@ package() {
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
   install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
   install -Dm644 docs/integrity.md "${pkgdir}/usr/share/doc/${pkgname}/docs/integrity.md"
+  install -Dm644 docs/systemd-migration.md "${pkgdir}/usr/share/doc/${pkgname}/docs/systemd-migration.md"
   install -Dm644 packaging/arch/README.md \
     "${pkgdir}/usr/share/doc/${pkgname}/packaging/arch/README.md"
+  install -Dm644 packaging/systemd/xbkeeper.service "${pkgdir}/usr/lib/systemd/system/xbkeeper.service"
+  install -Dm644 packaging/systemd/xbkeeper.timer "${pkgdir}/usr/lib/systemd/system/xbkeeper.timer"
 }

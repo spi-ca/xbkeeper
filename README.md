@@ -4,10 +4,12 @@ A small Linux-only full-backup wrapper for Percona XtraBackup. It runs one backu
 
 ## Build and use
 
-Requires Go 1.24+ and an installed compatible XtraBackup. Build with `go build -o xbkeeper .`; check with `go test ./...`, `go test -race ./...`, and `go vet ./...`. The executable is not installed or activated by this repository. Arch build
-instructions and the local-source `PKGBUILD` are in
-[`packaging/arch/`](packaging/arch/README.md). Host JSON and systemd units are
-maintained separately in `kubernetes-manifests/03-arch-systemd/xbkeeper/`.
+Requires Go 1.24+ and an installed compatible XtraBackup. Build with `go build -o xbkeeper .`; check with `go test ./...`, `go test -race ./...`, and `go vet ./...`. Building from source does not install or activate anything. The Arch package
+includes the binary, documentation and [service/timer](packaging/systemd/); it
+does not enable or start them. See [Arch packaging](packaging/arch/README.md)
+and the [unit migration plan](docs/systemd-migration.md). Host JSON, credentials,
+prerequisites and deployment policy remain outside this repository in
+`kubernetes-manifests/03-arch-systemd/xbkeeper/`.
 
 ```sh
 xbkeeper version
@@ -37,7 +39,8 @@ Tests use temporary directories, Unix-socket fixtures and a fake XtraBackup.
 `main_test.go` covers CLI/configuration and fake-process flows;
 `workflow_test.go` covers retention, clock rollback and command contracts;
 `safety_test.go` covers inspection failures, quarantine, durability failures and
-safe diagnostics. They require neither MySQL nor root. They do **not** establish
+safe diagnostics; `systemd_test.go` checks the offline package/unit contract.
+They require neither MySQL nor root. They do **not** establish
 real XtraBackup compatibility or restore correctness. Run `make test` before
 building a source archive; GNU make/tar and gzip are needed for `make dist`.
 
@@ -63,4 +66,12 @@ The wrapper invokes `xtrabackup --no-defaults --version`, then `xtrabackup --def
 
 Backups first land in a unique `.inprogress-UTC-random` directory. After a successful prepare, xbkeeper checks `xtrabackup_checkpoints` for exactly one `backup_type = full-prepared`, writes `xbkeeper.json` (format 2, creation/preparation timestamps, XtraBackup version), hashes all files into an exclusive root `SHA256SUMS` (including metadata and control files, excluding the manifest), syncs every safe regular file and directory in the staged tree (including metadata), atomically renames to `backup-UTC-random`, syncs the backup parent directory, and only then prunes older **validated, tool-named** backups down to `keep`. Invalid/tampered managed backups stop backup and status rather than being pruned. Ordinary failed backup/prepare staging is removed only when its tree is safe; hashing failures/cancellation after metadata, tampered staging, uncertain containment, and pre-promotion sync failures leave the stage for manual investigation. Any existing managed staging directory blocks new backups, while `status` reports it under `incomplete`. A post-promotion parent sync failure leaves the renamed backup in place but returns nonzero; old backups are not pruned. Existing successful backups are not pruned before the new backup passes the sync boundary. Unmanaged names are not deleted. Manual changes inside a managed backup can cause validation to fail. Regular files with multiple hard links, symlinks, and special files are rejected. Wall timestamps are recorded as observed (including clock rollback); the just-completed backup is always protected during retention. A retention error after promotion leaves the new backup in place but returns nonzero for operator investigation.
 
-Free-space preflight requires `min_free_bytes` plus the sum of allocated datadir file blocks to fit in currently available backup-volume bytes. This is a rough heuristic, **not a guarantee**: XtraBackup can use different space, the database can grow, and concurrent writes can consume free space. Filesystem sync errors abort retention, but successful `fsync` and rename do not prove hardware integrity, power-loss survival on every filesystem, database consistency, restore correctness, filesystem snapshot, or off-host durability. Monitor jobs, protect the credential and backup volume, test restores separately, and ensure enough space for multiple retained backups. This wrapper intentionally supplies no service unit or production activation policy.
+Free-space preflight requires `min_free_bytes` plus the sum of allocated datadir file blocks to fit in currently available backup-volume bytes. This is a rough heuristic, **not a guarantee**: XtraBackup can use different space, the database can grow, and concurrent writes can consume free space. Filesystem sync errors abort retention, but successful `fsync` and rename do not prove hardware integrity, power-loss survival on every filesystem, database consistency, restore correctness, filesystem snapshot, or off-host durability. Monitor jobs, protect the credential and backup volume, test restores separately, and ensure enough space for multiple retained backups. The Arch package supplies an unactivated oneshot service and daily persistent
+timer. It does not supply host configuration, credentials or production activation
+approval. The default unit writes only to `/var/backups/xtrabackup` and invokes
+`/etc/xbkeeper/xbkeeper.json`; a different backup root requires a reviewed
+`ReadWritePaths=` reset/drop-in. Before an approved upgrade, check the current
+timer/backup state and any `/etc/systemd/system/xbkeeper.*` units shadowing the
+packaged `/usr/lib/systemd/system` units. A newly enabled persistent timer may
+run immediately after a missed schedule. See [Arch packaging](packaging/arch/README.md)
+for migration and rollback boundaries.
