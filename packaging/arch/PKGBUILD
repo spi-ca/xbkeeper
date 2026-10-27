@@ -1,6 +1,6 @@
 pkgname=('xbkeeper' 'xbkeeper-debug')
-pkgver=20260926
-pkgrel=7
+pkgver=20261027
+pkgrel=1
 pkgdesc='Small local full-backup and retention manager for Percona XtraBackup'
 arch=('x86_64' 'aarch64')
 license=('BSD-3-Clause' 'MIT')
@@ -11,12 +11,12 @@ options=('!strip' '!debug' '!lto')
 # Local source distribution generated with `make dist` at the repository root.
 # No public upstream URL is assumed before this repository is published.
 source=("${pkgname}-v${pkgver}-${pkgrel}.tar.gz")
-sha256sums=('005248837a04d42e318e5b7a27eec350f991a31e4d5c6b536aa0de1d43d450f6')
+sha256sums=('41ae2d4992ac6b3406f7562c9763970a44172d6fc9f6f6e63673f324edc8c461')
 
 build() {
   cd "${pkgname}-v${pkgver}-${pkgrel}"
   CGO_ENABLED=0 go build -trimpath -buildvcs=false \
-    -ldflags "-X main.Version=v${pkgver}-${pkgrel}" -o xbkeeper .
+    -ldflags "-X main.Version=v${pkgver}-${pkgrel}" -o xbkeeper ./cmd/xbkeeper
   objcopy --only-keep-debug xbkeeper xbkeeper.debug
   strip --strip-debug xbkeeper
   objcopy --add-gnu-debuglink=xbkeeper.debug xbkeeper
@@ -35,6 +35,9 @@ package_xbkeeper() {
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
   install -Dm644 LICENSES/go-toml-MIT.txt "${pkgdir}/usr/share/licenses/${pkgname}/go-toml-MIT.txt"
   install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+  install -Dm644 docs/cli.md "${pkgdir}/usr/share/doc/${pkgname}/docs/cli.md"
+  install -Dm644 docs/operations.md "${pkgdir}/usr/share/doc/${pkgname}/docs/operations.md"
+  install -Dm644 docs/development.md "${pkgdir}/usr/share/doc/${pkgname}/docs/development.md"
   install -Dm644 docs/integrity.md "${pkgdir}/usr/share/doc/${pkgname}/docs/integrity.md"
   install -Dm644 docs/systemd-migration.md "${pkgdir}/usr/share/doc/${pkgname}/docs/systemd-migration.md"
   install -Dm644 docs/toml-migration.md "${pkgdir}/usr/share/doc/${pkgname}/docs/toml-migration.md"

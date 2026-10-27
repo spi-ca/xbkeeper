@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package backup
 
 import (
 	"bytes"
@@ -15,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"amuz.es/src/spi-ca/xbkeeper/internal/backup/report"
 )
 
 // now is overridden only by sequential clock-skew tests; wall timestamps remain honest.
@@ -87,41 +89,41 @@ func phaseError(phase string, err error) error {
 	}
 	return fmt.Errorf("%s: %s", phase, reason)
 }
-func backup(ctx context.Context, c config, events *slog.Logger, verbose bool) (backupReport, error) {
+func backup(ctx context.Context, c config, events *slog.Logger, verbose bool) (report.Backup, error) {
 	// Single-purpose CLI: process-global umask also applies to xtrabackup.
 	syscall.Umask(0077)
 	root, err := openBackupRoot(ctx, c.BackupDir)
 	if err != nil {
-		return backupReport{}, phaseError("validation", err)
+		return report.Backup{}, phaseError("validation", err)
 	}
 	defer root.Close()
 	lk, err := lock(root)
 	if err != nil {
-		return backupReport{}, phaseError("lock", err)
+		return report.Backup{}, phaseError("lock", err)
 	}
 	defer lk.Close()
 	s, err := inspectContext(ctx, c.BackupDir)
 	if err != nil {
-		return backupReport{}, phaseError("validation", err)
+		return report.Backup{}, phaseError("validation", err)
 	}
 	if len(s.Incomplete) != 0 {
-		return backupReport{}, phaseError("validation", errors.New("incomplete staging"))
+		return report.Backup{}, phaseError("validation", errors.New("incomplete staging"))
 	}
 	if err = validateRuntime(c); err != nil {
-		return backupReport{}, phaseError("validation", err)
+		return report.Backup{}, phaseError("validation", err)
 	}
 	if err = freeSpace(c); err != nil {
-		return backupReport{}, phaseError("validation", err)
+		return report.Backup{}, phaseError("validation", err)
 	}
 	id, err := token()
 	if err != nil {
-		return backupReport{}, phaseError("validation", err)
+		return report.Backup{}, phaseError("validation", err)
 	}
 	stamp := now().UTC().Format("20060102T150405Z")
 	stage := "inprogress-" + stamp + "-" + id
 	completed := "backup-" + stamp + "-" + id
 	if err = root.Mkdir(stage, 0700); err != nil {
-		return backupReport{}, phaseError("validation", err)
+		return report.Backup{}, phaseError("validation", err)
 	}
 	finished := false
 	preserveStage := false
@@ -135,7 +137,7 @@ func backup(ctx context.Context, c config, events *slog.Logger, verbose bool) (b
 	logName := ".command-" + id
 	f, err := root.OpenFile(logName, os.O_CREATE|os.O_EXCL|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
 	if err != nil {
-		return backupReport{}, phaseError("validation", err)
+		return report.Backup{}, phaseError("validation", err)
 	}
 	defer func() {
 		fi, e1 := f.Stat()
@@ -186,20 +188,20 @@ func backup(ctx context.Context, c config, events *slog.Logger, verbose bool) (b
 		var uncertain *containmentUncertain
 		preserveStage = errors.As(err, &uncertain)
 		if saveErr := saveFailure(root, log); saveErr != nil {
-			return backupReport{}, fmt.Errorf("%w; failure log unavailable", err)
+			return report.Backup{}, fmt.Errorf("%w; failure log unavailable", err)
 		}
-		return backupReport{}, err
+		return report.Backup{}, err
 	}
 	if err = safeTree(dir); err != nil {
-		return backupReport{}, phaseError("validation", err)
+		return report.Backup{}, phaseError("validation", err)
 	}
 	if err = checkpoint(dir); err != nil {
-		return backupReport{}, phaseError("validation", err)
+		return report.Backup{}, phaseError("validation", err)
 	}
 	m := metadata{Format: formatVersion, CreatedAt: started.Format(time.RFC3339Nano), PreparedAt: now().UTC().Format(time.RFC3339Nano), XtrabackupVersion: v}
 	b, _ := json.MarshalIndent(m, "", "  ")
 	if err = writeExclusive(root, stage+"/xbkeeper.json", append(b, '\n')); err != nil {
-		return backupReport{}, phaseError("validation", err)
+		return report.Backup{}, phaseError("validation", err)
 	}
 	// Once prepared metadata is present, never discard the stage on a hashing,
 	// validation or cancellation failure; no retention runs before promotion.
@@ -208,7 +210,7 @@ func backup(ctx context.Context, c config, events *slog.Logger, verbose bool) (b
 	events.Info("phase start", "backup_id", completed, "phase", "hash")
 	stageRoot, openErr := root.OpenRoot(stage)
 	if openErr != nil {
-		return backupReport{}, phaseError("hash", openErr)
+		return report.Backup{}, phaseError("hash", openErr)
 	}
 	manifest, hashErr := generateStaged(ctx, stageRoot)
 	_ = stageRoot.Close()
@@ -217,36 +219,36 @@ func backup(ctx context.Context, c config, events *slog.Logger, verbose bool) (b
 	}
 	events.Info("phase end", "backup_id", completed, "phase", "hash", "duration", time.Since(beginHash).String(), "ok", hashErr == nil)
 	if hashErr != nil {
-		return backupReport{}, phaseError("hash", hashErr)
+		return report.Backup{}, phaseError("hash", hashErr)
 	}
 	if err = validBackup(dir); err != nil {
-		return backupReport{}, phaseError("validation", err)
+		return report.Backup{}, phaseError("validation", err)
 	}
 	if err = ctx.Err(); err != nil {
-		return backupReport{}, phaseError("hash", err)
+		return report.Backup{}, phaseError("hash", err)
 	}
 	if _, err = root.Lstat(completed); err == nil {
-		return backupReport{}, phaseError("validation", errors.New("destination exists"))
+		return report.Backup{}, phaseError("validation", errors.New("destination exists"))
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return backupReport{}, phaseError("validation", err)
+		return report.Backup{}, phaseError("validation", err)
 	}
 	if err = syncStaged(root, stage); err != nil {
 		preserveStage = true
-		return backupReport{}, phaseError("durability", err)
+		return report.Backup{}, phaseError("durability", err)
 	}
 	if err = ctx.Err(); err != nil {
-		return backupReport{}, phaseError("durability", err)
+		return report.Backup{}, phaseError("durability", err)
 	}
 	if err = renameInRoot(root, stage, completed); err != nil {
 		preserveStage = true
-		return backupReport{}, phaseError("validation", err)
+		return report.Backup{}, phaseError("validation", err)
 	}
 	finished = true
 	if err = syncPromotedParent(root); err != nil {
-		return backupReport{}, phaseError("durability", err)
+		return report.Backup{}, phaseError("durability", err)
 	}
 	if err = ctx.Err(); err != nil {
-		return backupReport{}, phaseError("retention", err)
+		return report.Backup{}, phaseError("retention", err)
 	}
 	begin := time.Now()
 	events.Info("phase start", "backup_id", completed, "phase", "retention")
@@ -256,37 +258,37 @@ func backup(ctx context.Context, c config, events *slog.Logger, verbose bool) (b
 	s, scanErr := inspectContext(ctx, c.BackupDir)
 	if scanErr != nil {
 		err = scanErr
-		return backupReport{}, phaseError("retention", err)
+		return report.Backup{}, phaseError("retention", err)
 	}
 	// A previous unlink may have stopped halfway. Retry only exact deletion
 	// namespace entries, after the new completed backup is durably promoted.
 	// Space preflight ran before this point, so a full volume still fails safe.
 	for _, pending := range s.PendingDeletions {
 		if err = ctx.Err(); err != nil {
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 		// A legitimate interrupted deletion always leaves a directory, never
 		// a standalone file or link bearing a reserved-looking name.
 		fi, statErr := root.Lstat(pending)
 		if statErr != nil || !fi.IsDir() {
 			err = errors.New("invalid pending deletion directory")
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 		if err = safeTreeContext(ctx, filepath.Join(c.BackupDir, pending)); err != nil {
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 		if err = removeRetained(ctx, root, pending); err != nil {
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 		if err = syncRetainedParent(root); err != nil {
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 	}
 	// The just-completed backup is protected even when the wall clock rolls back.
 	kept := 0
 	for _, old := range s.Backups {
 		if err = ctx.Err(); err != nil {
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 		if old == completed {
 			continue
@@ -296,43 +298,43 @@ func backup(ctx context.Context, c config, events *slog.Logger, verbose bool) (b
 			continue
 		}
 		if err = validBackupContext(ctx, filepath.Join(c.BackupDir, old)); err != nil {
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 		if err = ctx.Err(); err != nil {
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 		pending := ".deleting-" + strings.TrimPrefix(old, "backup-")
 		// Never overwrite an existing pending tree (including a symlink).
 		if _, statErr := root.Lstat(pending); statErr == nil {
-			return backupReport{}, phaseError("retention", errors.New("deletion destination exists"))
+			return report.Backup{}, phaseError("retention", errors.New("deletion destination exists"))
 		} else if !errors.Is(statErr, os.ErrNotExist) {
-			return backupReport{}, phaseError("retention", statErr)
+			return report.Backup{}, phaseError("retention", statErr)
 		}
 		if err = ctx.Err(); err != nil {
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 		if err = renameRetained(root, old, pending); err != nil {
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 		// Persist the removal from the completed namespace before unlinking.
 		// Sync failure leaves the whole renamed tree for a later safe retry.
 		if err = syncRetainedParent(root); err != nil {
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 		if err = ctx.Err(); err != nil {
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 		if err = safeTreeContext(ctx, filepath.Join(c.BackupDir, pending)); err != nil {
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 		if err = removeRetained(ctx, root, pending); err != nil {
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 		if err = syncRetainedParent(root); err != nil {
-			return backupReport{}, phaseError("retention", err)
+			return report.Backup{}, phaseError("retention", err)
 		}
 	}
-	return backupReport{Name: completed}, nil
+	return report.Backup{Name: completed}, nil
 }
 func saveFailure(root *os.Root, log *commandTail) error {
 	b, err := log.Bytes()

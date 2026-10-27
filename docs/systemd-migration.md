@@ -1,10 +1,12 @@
 # systemd unit ownership migration
 
-Status: xbkeeper-side unit/package migration implemented in the repository;
-host-manifests cleanup and deployment remain separate. The user approved moving
-the existing service/timer from kubernetes-manifests into the xbkeeper package.
-No host installation, timer activation, backup, restore or DB restart is
-authorized by this change.
+Historical record: repository-side unit/package ownership migration is implemented.
+The operational boundaries below still apply; the numbered implementation steps
+record the original handoff, not a new deployment authorization. Use
+[operations](operations.md) and [Arch packaging](../packaging/arch/README.md) for
+current operator guidance, and [development](development.md#release-boundary-not-an-instruction-to-publish)
+for current source pins and release gates. No host installation, timer activation,
+backup, restore or DB restart is authorized by this record.
 
 ## Contract
 
@@ -40,10 +42,10 @@ authorized by this change.
 - After=mysqld.service is ordering only. Do not add Wants/Requires or restart DB
   services. No ConditionPathExists to turn missing prerequisites into a skip.
 - Host-specific TOML values, authentication, capacity, backup/restore validation
-  and deployment instructions remain in kubernetes-manifests. Review the generic
+  and deployment instructions remain operator-managed. Review the generic
   packaged config and any existing operator config before using the service.
-  Remove only its two duplicate unit sources after their exact behavior is
-  covered in xbkeeper tests.
+  Historical duplicate host-unit sources were a separate migration concern;
+  package ownership does not authorize modifying a host's overrides.
 
 ## Implementation and validation
 
@@ -51,15 +53,15 @@ authorized by this change.
 2. Add canonical units and offline Go contract tests for unit contents and package
    installation boundaries. Include units, tests and relevant docs in the source
    distribution; keep CLI code and unrelated existing work unchanged.
-3. Update Arch packaging and both repositories' ownership/install documentation.
-   The manifests repository is maintained separately: remove its duplicate unit
-   sources only after migrating their assertions; keep host configuration contract tests
-   and assert no duplicate units remain.
+3. Update Arch packaging and ownership/install documentation. Host-specific
+   configuration and its regression tests remain separately managed; package
+   changes do not authorize deleting host unit sources or overrides.
 4. This records the prior unit-migration handoff: preserve the completed 0.2.0
    integrity implementation and never rebuild from the stale 0.1 archive. The
    subsequent TOML migration initially bumped the source to 0.3.0; the current
-   pinned source version is v20260926-7. Keep its archive, checksum and .SRCINFO
-   synchronized whenever the source snapshot changes.
+   prepared source version is v20261027-1. Keep its archive, checksum and .SRCINFO
+   synchronized as part of each separately authorized release snapshot;
+   source pin preparation does not establish remote verification or publication.
    Verify archive contents include integrity sources/tests, new units, TOML
    examples and module sums. Never bypass checksums or imply a release occurred.
 5. Run Go tests/race/vet, source verification and source archive content checks,
@@ -71,7 +73,7 @@ authorized by this change.
    On failure, keep the existing schedule/package and backup data intact; do
    not silently weaken unit restrictions to make an unverified backup pass.
    Verify package payload in an isolated build where available, otherwise state
-   that actual package build is unverified. Run host-manifest regression tests
+   that actual package build is unverified. Run host-configuration regression tests
    separately after the manifests-side edits are settled.
 6. Independently review the settled implementation and fix concrete findings.
 
@@ -96,5 +98,5 @@ credentials. No current host unit state is inferred from repository changes.
 ## Completion boundary
 
 Repository/package ownership, tests and docs must agree. Live activation and
-successful real backup/restore remain unverified, separate gates. Kine/MySQL
-hardening stays deferred until a usable backup and recovery path are established.
+successful real backup/restore remain unverified, separate gates. Further database
+hardening requires a separately validated backup and recovery path.

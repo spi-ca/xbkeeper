@@ -1,4 +1,4 @@
-package main
+package packaging
 
 import (
 	"bufio"
@@ -137,8 +137,8 @@ func TestPackageInstallsUnitsWithoutActivationOrProvisioning(t *testing.T) {
 		t.Fatal(err)
 	}
 	pkg := string(content)
-	if !strings.Contains(pkg, "pkgver=20260926\npkgrel=7\n") {
-		t.Error("package must be version 20260926, release 6")
+	if !strings.Contains(pkg, "pkgver=20261027\npkgrel=1\n") {
+		t.Error("package must be version 20261027, release 1")
 	}
 	if strings.Count(pkg, "backup=(") != 1 || !strings.Contains(pkg, "\n  backup=('etc/xbkeeper/xbkeeper.toml' 'etc/mysql/xbkeeper.cnf')\n") {
 		t.Error("package must protect both operator config and MySQL option template with pacman backup")
@@ -159,6 +159,9 @@ func TestPackageInstallsUnitsWithoutActivationOrProvisioning(t *testing.T) {
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
   install -Dm644 LICENSES/go-toml-MIT.txt "${pkgdir}/usr/share/licenses/${pkgname}/go-toml-MIT.txt"
   install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+  install -Dm644 docs/cli.md "${pkgdir}/usr/share/doc/${pkgname}/docs/cli.md"
+  install -Dm644 docs/operations.md "${pkgdir}/usr/share/doc/${pkgname}/docs/operations.md"
+  install -Dm644 docs/development.md "${pkgdir}/usr/share/doc/${pkgname}/docs/development.md"
   install -Dm644 docs/integrity.md "${pkgdir}/usr/share/doc/${pkgname}/docs/integrity.md"
   install -Dm644 docs/systemd-migration.md "${pkgdir}/usr/share/doc/${pkgname}/docs/systemd-migration.md"
   install -Dm644 docs/toml-migration.md "${pkgdir}/usr/share/doc/${pkgname}/docs/toml-migration.md"
@@ -230,6 +233,7 @@ func TestPackageConfigPayloadModes(t *testing.T) {
 	source := filepath.Join(root, "xbkeeper-v"+version)
 	for _, name := range []string{
 		"xbkeeper", "LICENSE", "LICENSES/go-toml-MIT.txt", "README.md",
+		"docs/cli.md", "docs/operations.md", "docs/development.md",
 		"docs/integrity.md", "docs/systemd-migration.md", "docs/toml-migration.md",
 		"examples/xbkeeper.toml", "examples/xbkeeper.cnf", "examples/README.md", "packaging/arch/README.md",
 		"packaging/systemd/xbkeeper.service", "packaging/systemd/xbkeeper.timer", "packaging/tmpfiles/xbkeeper.conf",
@@ -238,7 +242,7 @@ func TestPackageConfigPayloadModes(t *testing.T) {
 			t.Fatal(err)
 		}
 		contents := []byte("fixture\n")
-		if name == "examples/xbkeeper.toml" || name == "examples/xbkeeper.cnf" {
+		if name != "xbkeeper" {
 			contents, err = os.ReadFile(name)
 			if err != nil {
 				t.Fatal(err)
@@ -255,6 +259,7 @@ func TestPackageConfigPayloadModes(t *testing.T) {
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("package() failed: %v: %s", err, output)
 	}
+	checkDocLinks(t, filepath.Join(pkgdir, "usr/share/doc/xbkeeper"))
 	parent := filepath.Join(pkgdir, "etc/xbkeeper")
 	config := filepath.Join(parent, "xbkeeper.toml")
 	for _, tc := range []struct {

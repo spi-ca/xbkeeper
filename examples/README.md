@@ -21,5 +21,5 @@ version compatibility and an isolated restore before relying on a backup.
 
 Existing JSON config content must be converted manually to TOML; renaming a
 JSON file does not convert its format. Installation does not enable the timer
-or run a backup. See the [configuration contract](../README.md#configuration)
+or run a backup. See the [configuration contract](../docs/operations.md#configuration)
 and [Arch installation boundaries](../packaging/arch/README.md).

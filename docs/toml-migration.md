@@ -1,11 +1,13 @@
 # TOML configuration and packaged examples
 
-Status: configuration migration originally implemented at version 0.3.0;
-the current pinned source version is v20260926-7. Independent
-design and implementation reviews completed; review findings required exact-case
-key checks and complete-fixture negative/escape tests. Packaging validation
-requirements are recorded below.
-No host installation, timer change, database access, publication or commit is included.
+Historical record: the configuration migration was implemented at version 0.3.0.
+The TOML-only configuration and package boundaries below remain current; the
+implementation checklist records that migration, not pending runtime changes.
+Use [operations](operations.md#configuration) for current configuration guidance.
+The current prepared release is `v20261027-1`; see
+[release provenance](development.md#release-boundary-not-an-instruction-to-publish)
+for source pins and the separate verification/publication gates.
+No host installation, timer change, database access or publication is authorized.
 Review resolution: go-toml/v2 v2.3.0 `DisallowUnknownFields` matches struct
 fields case-insensitively, so parsed top-level keys are checked for exact names
 before strict typed decoding. Existing JSON files must be converted manually;
@@ -14,7 +16,7 @@ renaming JSON content to `.toml` is not migration.
 ## Scope and compatibility
 
 - Replace only the operator configuration parser with TOML. Use pinned
-  `github.com/pelletier/go-toml/v2` (also used by sibling Go projects), with
+  `github.com/pelletier/go-toml/v2`, with
   `go.mod`/`go.sum`. Preserve its MIT notice in `LICENSES/go-toml-MIT.txt`
   and in the binary package. Do not implement a partial TOML parser.
 - Flat, exact lowercase keys retain the current seven fields and semantics:
@@ -28,9 +30,11 @@ renaming JSON content to `.toml` is not migration.
   Changing a suffix is not conversion: existing JSON content needs explicit
   operator migration. The original plan called for tool version 0.3.0 and Arch
   release 1; the current version policy supersedes that numbering with
-  `v20260926-7` (`pkgver=20260926`, `pkgrel=7`).
-- `xbkeeper.json` INSIDE a backup, metadata versions 1/2, `SHA256SUMS`, and JSON
-  the command output now uses a common `{command,ok,data,error}` envelope with `--json`; status and verify payload fields remain inside `data`. All commands default to human-readable results. Keep strict JSON checks for metadata.
+  `v20261027-1` (`pkgver=20261027`, `pkgrel=1`).
+- `xbkeeper.json` inside a backup, metadata versions 1/2 and `SHA256SUMS` are
+  unchanged. Command output uses the common `{command,ok,data,error}` envelope
+  with `--json`; status and verify payload fields remain inside `data`. All
+  commands default to human-readable results. Keep strict JSON metadata checks.
   Never bulk-replace every `.json` reference or alter existing backup artifacts.
 
 ## Ownership and paths
@@ -51,11 +55,10 @@ renaming JSON content to `.toml` is not migration.
 - Preserve the current package-owned systemd units under `/usr/lib/systemd/system`;
   change only ExecStart's config path to `.toml`. Existing `/etc/systemd` full-unit
   overrides can shadow that change and must be reviewed separately.
-- Convert only `kubernetes-manifests/03-arch-systemd/xbkeeper/xbkeeper.json` to the
-  corresponding `.toml`; update its runbook and offline contract tests. Keep the
-  existing host values and the separation from the control-plane renderer.
-- Preserve the user's staged systemd migration and untracked CI work. Do not
-  stage/unstage/commit files, change the unit schedule/sandbox or edit live `/etc`.
+- Host operators must convert their separately managed JSON configuration to
+  TOML while preserving reviewed values and updating their runbook/tests.
+- The original work preserved in-flight unit/CI changes; this historical record
+  grants no permission to change the unit schedule/sandbox or edit live `/etc`.
 
 ## Implementation and verification order
 
@@ -78,7 +81,8 @@ renaming JSON content to `.toml` is not migration.
    and Go toolchain. Dependency acquisition is separate from that offline build.
    Normal package builds use the pinned Go module dependency, not an invented
    remote source URL or disabled checksum validation.
-7. After source finalization, regenerate the matching versioned archive, package
+7. For each separately authorized new release, after source finalization,
+   regenerate the matching versioned archive, package
    SHA-256 and `.SRCINFO`; inspect payload and the packaged
-   binary's version. Release/publication remains out of scope; do not claim a
-   remote CI run or real database backup from local fake-process checks.
+   binary's version. This historical record does not authorize publication;
+   do not claim a remote CI run or real database backup from local fake-process checks.

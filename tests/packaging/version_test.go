@@ -1,4 +1,4 @@
-package main
+package packaging
 
 import (
 	"crypto/sha256"
@@ -27,11 +27,11 @@ func TestReleaseVersionContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const version = "v20260926-7"
+	const version = "v20261027-1"
 	if !strings.Contains(string(makefile), "VERSION := "+version+"\n") {
 		t.Fatal("Makefile must pin the full canonical version")
 	}
-	if !strings.Contains(string(pkg), "pkgver=20260926\npkgrel=7\n") {
+	if !strings.Contains(string(pkg), "pkgver=20261027\npkgrel=1\n") {
 		t.Fatal("Arch pkgver/pkgrel must match the pinned version")
 	}
 	for _, part := range []string{
@@ -98,17 +98,17 @@ func TestReleaseVersionContract(t *testing.T) {
 		name, tag, makeVersion, pkgver, pkgrel string
 		valid                                  bool
 	}{
-		{"current", version, version, "20260926", "7", true},
-		{"same-day-revision", "v20260926-8", "v20260926-8", "20260926", "8", true},
+		{"current", version, version, "20261027", "1", true},
+		{"same-day-revision", "v20261027-2", "v20261027-2", "20261027", "2", true},
 		{"invalid-date", "v20261399-1", "v20261399-1", "20261399", "1", false},
 		{"invalid-leap-day", "v20260229-1", "v20260229-1", "20260229", "1", false},
 		{"valid-leap-day", "v20280229-1", "v20280229-1", "20280229", "1", true},
 		{"old-semver", "v0.3.0", "v0.3.0", "0.3.0", "1", false},
-		{"zero-revision", "v20260926-0", "v20260926-0", "20260926", "0", false},
-		{"no-v-prefix", "20260926-1", "20260926-1", "20260926", "1", false},
-		{"mismatched-make", version, "v20260925-1", "20260926", "7", false},
-		{"mismatched-pkgver", version, version, "20260925", "7", false},
-		{"mismatched-pkgrel", version, version, "20260926", "5", false},
+		{"zero-revision", "v20261027-0", "v20261027-0", "20261027", "0", false},
+		{"no-v-prefix", "20261027-1", "20261027-1", "20261027", "1", false},
+		{"mismatched-make", version, "v20261026-1", "20261027", "1", false},
+		{"mismatched-pkgver", version, version, "20261026", "1", false},
+		{"mismatched-pkgrel", version, version, "20261027", "2", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -164,7 +164,7 @@ func TestSplitPackageSrcinfoContract(t *testing.T) {
 			t.Errorf("main-only field %q missing or leaked to debug", field)
 		}
 	}
-	if !strings.Contains(sections[2], "\tdepends = xbkeeper=20260926-7\n") || strings.Count(sections[2], "\tdepends = ") != 1 {
+	if !strings.Contains(sections[2], "\tdepends = xbkeeper=20261027-1\n") || strings.Count(sections[2], "\tdepends = ") != 1 {
 		t.Errorf("debug package must depend only on exact main version: %s", sections[2])
 	}
 	for _, option := range []string{"\toptions = !strip\n", "\toptions = !debug\n"} {
@@ -270,7 +270,7 @@ func TestReleasePinnedChecksum(t *testing.T) {
 				}
 			}
 			payload := []byte("fixture source archive")
-			if err := os.WriteFile(filepath.Join(dir, "dist/xbkeeper-v20260926-7.tar.gz"), payload, 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "dist/xbkeeper-v20261027-1.tar.gz"), payload, 0600); err != nil {
 				t.Fatal(err)
 			}
 			sum := fmt.Sprintf("%x", sha256.Sum256(payload))
@@ -282,7 +282,7 @@ func TestReleasePinnedChecksum(t *testing.T) {
 			}
 			cmd := exec.Command("bash", "-c", strings.Join(lines, "\n"))
 			cmd.Dir = dir
-			cmd.Env = append(os.Environ(), "VERSION=v20260926-7")
+			cmd.Env = append(os.Environ(), "VERSION=v20261027-1")
 			output, err := cmd.CombinedOutput()
 			if (err == nil) != valid {
 				t.Fatalf("valid=%t: %v: %s", valid, err, output)

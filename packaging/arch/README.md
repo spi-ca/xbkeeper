@@ -22,9 +22,17 @@ modified TOML and MySQL option files during upgrades (new defaults may arrive
 as `.pacnew`); compare these manually. It does not create a DB account, install
 active credentials, enable/start a timer, run an install hook or delete backups
 on removal. System tmpfiles boot/package hooks may create the default root if
-absent; the package payload itself contains no backup directory. Host-specific config values, prerequisites and deployment instructions
-remain in `~/Codebase/kubernetes-manifests/03-arch-systemd/xbkeeper/`.
+absent; the package payload itself contains no backup directory. Host-specific configuration, credentials, prerequisites and deployment approval
+remain the operator's responsibility; no external checkout is required to use this package.
 The [unit migration plan](../../docs/systemd-migration.md) records the handoff.
+
+**Prepared source version:** `v20261027-1` pins the package-separated source
+snapshot with a matching deterministic source archive, SHA-256 and generated
+`.SRCINFO`. These inputs do not establish successful remote CI or publication.
+Any later distributed source or documentation edit requires regenerating the
+archive, checksum and `.SRCINFO` before verification; never bypass stale pins.
+
+See [development and provenance](../../docs/development.md) for package roles.
 
 ## Existing host build sandbox
 
@@ -51,14 +59,14 @@ prefetch and verify it separately for offline builds. No automatic package
 install (`-i`) is used. The split recipe explicitly detaches Go DWARF symbols,
 strips the main binary's debug sections, adds a GNU debuglink and disables
 makepkg's automatic debug package. `xbkeeper-debug` contains the separate
-symbols and licenses and depends on `xbkeeper=20260926-7`; it is **optional**
+symbols and licenses and depends on `xbkeeper=20261027-1`; it is **optional**
 for running xbkeeper, including `--verbose` (which controls runtime logs, not
 debug symbols). Install both matching files in one reviewed transaction when
 symbols are desired:
 
 ```sh
-sudo pacman -U ./xbkeeper-20260926-7-x86_64.pkg.tar.zst \
-  ./xbkeeper-debug-20260926-7-x86_64.pkg.tar.zst
+sudo pacman -U ./xbkeeper-20261027-1-x86_64.pkg.tar.zst \
+  ./xbkeeper-debug-20261027-1-x86_64.pkg.tar.zst
 ```
 
 This is an example for a separately approved host deployment, not an instruction
@@ -67,10 +75,10 @@ to run it during build/review; normal main-only installation is also supported.
 `make dist` uses deterministic archive timestamps, owner IDs, regular-file modes
 (0644) and gzip headers, and copies the archive next to `PKGBUILD` for makepkg's
 local-source lookup. Source file permissions/umask do not change its checksum.
-The canonical pinned version is `v20260926-7`: the release tag, Makefile
+The canonical pinned version is `v20261027-1`: the release tag, Makefile
 `VERSION`, source archive directory/name and binary `version` output use the
-full `vYYYYMMDD-N` string. Arch splits it into `pkgver=20260926` and
-`pkgrel=7`. A further release on the same day requires another revision and a
+full `vYYYYMMDD-N` string. Arch splits it into `pkgver=20261027` and
+`pkgrel=1`. A further release on the same day requires another revision and a
 **new matching source archive**; never bump only `pkgrel` while reusing the
 previous source version/archive. Versions are pinned, not generated from the
 build date. After intentionally changing source files, update all version
@@ -100,7 +108,7 @@ After building, inspect the package file list and `.PKGINFO`, including the
 `/usr/lib/systemd/system` units, the tmpfiles rule, the private `/etc/xbkeeper` config permissions
 and both `backup` entries and the `/etc/mysql` template/file modes; check the
 extracted binary's `version` command without running `backup`. Verify that
-`xbkeeper-debug` has exactly `depend = xbkeeper=20260926-7` in `.PKGINFO`,
+`xbkeeper-debug` has exactly `depend = xbkeeper=20261027-1` in `.PKGINFO`,
 contains `/usr/lib/debug/usr/bin/xbkeeper.debug`, and the main binary has a
 matching GNU debuglink. Keep package archives out of Git. Package creation
 does not establish real backup or restore correctness.
@@ -139,6 +147,6 @@ back up any existing `/etc/systemd/system/xbkeeper.service` or `.timer`:
 local units shadow the new packaged `/usr/lib` units until a separately approved
 migration and daemon-reload. Preserve unknown drop-ins/customizations, config,
 credentials and backup data. Retain known-good package/units for rollback;
-disabling a timer does not stop an active backup. See the host deployment guide
+disabling a timer does not stop an active backup. Maintain a host-specific runbook
 for prerequisites and isolated restore validation. No live activation, backup
 or restore is established by this package change.

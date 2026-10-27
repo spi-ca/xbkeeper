@@ -1,5 +1,6 @@
 /build/
 /dist/
+/.test-evidence/
 /xbkeeper
 /packaging/arch/src/
 /packaging/arch/pkg/

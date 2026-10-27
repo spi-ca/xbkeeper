@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package backup
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"amuz.es/src/spi-ca/xbkeeper/internal/backup/report"
 )
 
 func safeTree(path string) error { return safeTreeContext(context.Background(), path) }
@@ -138,9 +140,9 @@ func validBackupRoot(ctx context.Context, r *os.Root) error {
 	}
 	return nil
 }
-func inspect(root string) (status, error) { return inspectContext(context.Background(), root) }
-func inspectContext(ctx context.Context, root string) (status, error) {
-	s := status{Backups: []string{}, Incomplete: []string{}, PendingDeletions: []string{}}
+func inspect(root string) (report.Status, error) { return inspectContext(context.Background(), root) }
+func inspectContext(ctx context.Context, root string) (report.Status, error) {
+	s := report.Status{Backups: []string{}, Incomplete: []string{}, PendingDeletions: []string{}}
 	if err := ctx.Err(); err != nil {
 		return s, err
 	}
