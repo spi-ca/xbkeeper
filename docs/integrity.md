@@ -1,6 +1,6 @@
 # SHA-256 integrity extension
 
-Status: implemented in xbkeeper 0.2.0. The Arch recipe is maintained in
+Current canonical integrity contract (introduced in xbkeeper 0.2.0). The Arch recipe is maintained in
 `packaging/arch/` alongside the source. No real database backup or restore
 was performed. Scope: file corruption detection, not signatures, database
 consistency validation or automated repair.
@@ -95,11 +95,15 @@ must not perform a full-content hash audit; only explicit verify does so.
    version-1 behavior; cancellation and hash failure without old-backup pruning.
 3. Compare the supported manifest format with GNU `sha256sum -c` in a fixture.
 4. Run all Go tests, race detector, vet and cross-build; update source/host docs.
-5. Keep the Makefile and Arch versions synchronized, regenerate the deterministic
-   source archive, pin its checksum and `.SRCINFO`, then build the Arch package
+5. At a separately authorized new release, keep Makefile and Arch versions
+   synchronized, regenerate its deterministic source archive, pin its checksum
+   and `.SRCINFO`, then build the Arch package
    in the offline container. This document is included in the archive. These
    checks do not install a package or activate a timer.
 
 A successful SHA-256 check proves agreement with the stored manifest, not trusted
 provenance, disk redundancy or restore correctness. Keep independent recovery
 tests and external storage as separate operational requirements.
+
+See [release provenance](development.md#release-boundary-not-an-instruction-to-publish):
+the retained old-version source pins do not certify the package-separated tree.

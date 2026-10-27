@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package backup
 
 import (
 	"fmt"
@@ -117,7 +117,7 @@ min_free_bytes = 1_024
 }
 
 func TestPackagedTOMLExample(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("examples", "xbkeeper.toml"))
+	b, err := os.ReadFile(filepath.Join("..", "..", "examples", "xbkeeper.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package packaging
 
 import (
 	"bytes"
@@ -14,8 +14,11 @@ import (
 
 func TestCLIFailureResultIsNotDuplicated(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "xbkeeper")
-	if output, err := exec.Command("go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
+	if output, err := exec.Command("go", "build", "-ldflags", "-X main.Version=package-layout-test", "-o", binary, "./cmd/xbkeeper").CombinedOutput(); err != nil {
 		t.Fatalf("build CLI: %v\n%s", err, output)
+	}
+	if output, err := exec.Command(binary, "version").CombinedOutput(); err != nil || string(output) != "package-layout-test\n" {
+		t.Fatalf("linked version: %v %q", err, output)
 	}
 	missing := filepath.Join(t.TempDir(), "missing.toml")
 	for _, command := range []string{"backup", "verify", "status"} {
@@ -35,7 +38,12 @@ func TestCLIFailureResultIsNotDuplicated(t *testing.T) {
 				t.Fatalf("%v: duplicate diagnostic: %q", args, stderr.String())
 			}
 			if asJSON {
-				var result commandEnvelope
+				var result struct {
+					Command string  `json:"command"`
+					OK      bool    `json:"ok"`
+					Error   *string `json:"error"`
+					Data    any     `json:"data"`
+				}
 				if err := json.Unmarshal(out.Bytes(), &result); err != nil || result.Command != command || result.OK || result.Error == nil || result.Data != nil {
 					t.Fatalf("%v: invalid failure envelope: %s (%v)", args, out.String(), err)
 				}

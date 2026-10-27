@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package backup
 
 import (
 	"context"
@@ -11,17 +11,9 @@ import (
 	"sort"
 	"strings"
 	"time"
-)
 
-type verifyResult struct {
-	Name   string `json:"name"`
-	OK     bool   `json:"ok"`
-	Files  int    `json:"files"` // successfully hashed files; zero if none checked
-	Reason string `json:"reason,omitempty"`
-}
-type verifyReport struct {
-	Backups []verifyResult `json:"backups"`
-}
+	reports "amuz.es/src/spi-ca/xbkeeper/internal/backup/report"
+)
 
 const (
 	reasonLegacy   = "legacy format 1 is unverifiable"
@@ -29,8 +21,8 @@ const (
 	reasonMismatch = "checksum or file set mismatch"
 )
 
-func verify(ctx context.Context, dir, selected string, events *slog.Logger) (verifyReport, error) {
-	var report verifyReport
+func verify(ctx context.Context, dir, selected string, events *slog.Logger) (reports.Verify, error) {
+	var report reports.Verify
 	if selected != "" && (!managedName.MatchString(selected) || !strings.HasPrefix(selected, "backup-")) {
 		return report, errors.New("verify: invalid completed backup basename")
 	}
@@ -66,7 +58,7 @@ func verify(ctx context.Context, dir, selected string, events *slog.Logger) (ver
 	if len(names) == 0 {
 		return report, errors.New("verify: no completed backups")
 	}
-	report = verifyReport{Backups: make([]verifyResult, 0, len(names))}
+	report = reports.Verify{Backups: make([]reports.Verification, 0, len(names))}
 	failed := false
 	for _, n := range names {
 		if err := ctx.Err(); err != nil {
@@ -105,8 +97,8 @@ func matchingFileSet(files []string, expected map[string]string) bool {
 	}
 	return true
 }
-func verifyOne(ctx context.Context, root *os.Root, name string) (verifyResult, error) {
-	result := verifyResult{Name: name, Reason: reasonInvalid}
+func verifyOne(ctx context.Context, root *os.Root, name string) (reports.Verification, error) {
+	result := reports.Verification{Name: name, Reason: reasonInvalid}
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}

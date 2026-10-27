@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package backup
 
 import (
 	"bytes"
@@ -50,7 +50,7 @@ func completed(t *testing.T, f fixture) string {
 func TestBuiltCLISmoke(t *testing.T) {
 	f := setup(t)
 	bin := filepath.Join(t.TempDir(), "xbkeeper")
-	cmd := exec.Command("go", "build", "-o", bin, ".")
+	cmd := exec.Command("go", "build", "-o", bin, "../../cmd/xbkeeper")
 	if b, e := cmd.CombinedOutput(); e != nil {
 		t.Fatalf("build: %v %s", e, b)
 	}

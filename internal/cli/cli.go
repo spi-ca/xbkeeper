@@ -1,6 +1,8 @@
 //go:build linux
 
-package main
+// Package cli parses commands and presents results without depending on the
+// backup implementation. Operations are supplied by the executable.
+package cli
 
 import (
 	"context"
@@ -10,57 +12,21 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
-	"os/signal"
-	"regexp"
-	"syscall"
+
+	"amuz.es/src/spi-ca/xbkeeper/internal/backup/report"
 )
 
-// Version can be set with -ldflags '-X main.Version=v1.2.3'.
-var Version = "dev"
-
-const formatVersion = 2
-const maxLog = 1 << 20
 const defaultConfigPath = "/etc/xbkeeper/xbkeeper.toml"
 
-var managedName = regexp.MustCompile(`^(backup|inprogress|\.inprogress|\.deleting)-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}$`)
-
-type config struct {
-	BackupDir    string `toml:"backup_dir"`
-	Datadir      string `toml:"datadir"`
-	Socket       string `toml:"socket"`
-	DefaultsFile string `toml:"defaults_file"`
-	Keep         int    `toml:"keep"`
-	MinFreeBytes int64  `toml:"min_free_bytes"`
-	Xtrabackup   string `toml:"xtrabackup"`
-}
-type metadata struct {
-	Format            int    `json:"format"`
-	CreatedAt         string `json:"created_at"`
-	PreparedAt        string `json:"prepared_at"`
-	XtrabackupVersion string `json:"xtrabackup_version"`
-}
-type status struct {
-	Backups          []string `json:"backups"`
-	Incomplete       []string `json:"incomplete"`
-	PendingDeletions []string `json:"pending_deletions"`
-	LastSuccess      string   `json:"last_success,omitempty"`
+// Operations is the command-facing boundary of a configured backup engine.
+type Operations interface {
+	Status(context.Context) (report.Status, error)
+	Verify(context.Context, string, *slog.Logger) (report.Verify, error)
+	Backup(context.Context, *slog.Logger, bool) (report.Backup, error)
 }
 
-func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	if err := run(ctx, os.Args[1:], os.Stdout); err != nil {
-		var presented *presentedError
-		if !errors.As(err, &presented) {
-			fmt.Fprintln(os.Stderr, "xbkeeper:", err)
-		}
-		os.Exit(1)
-	}
-}
-func run(ctx context.Context, args []string, out io.Writer) error {
-	return runWithLog(ctx, args, out, os.Stderr)
-}
+// Opener loads and validates a private configuration without creating storage.
+type Opener func(configPath string) (Operations, error)
 
 // commandEnvelope is the only JSON value written to stdout for a parsed command.
 // Data is nil for pre-result failures, but may contain partial verification results.
@@ -70,20 +36,19 @@ type commandEnvelope struct {
 	Data    any     `json:"data"`
 	Error   *string `json:"error"`
 }
-type backupReport struct {
-	Name string `json:"name"`
-}
 
-// Mark only errors whose result was successfully written. Parse and writer
-// failures still need stderr diagnostics; errors.Is/As retain the original cause.
-type presentedError struct{ cause error }
+// PresentedError marks an operational error successfully written to the result
+// stream. Parse/writer errors still need stderr diagnostics. It unwraps to the
+// original cause for cancellation/error matching.
+type PresentedError struct{ cause error }
 
-func (e *presentedError) Error() string { return e.cause.Error() }
-func (e *presentedError) Unwrap() error { return e.cause }
+func (e *PresentedError) Error() string { return e.cause.Error() }
+func (e *PresentedError) Unwrap() error { return e.cause }
 
-func runWithLog(ctx context.Context, args []string, out, logOutput io.Writer) error {
+// Run executes one invocation, keeping results and diagnostic events separate.
+func Run(ctx context.Context, args []string, out, logOutput io.Writer, version string, open Opener) error {
 	if len(args) == 1 && args[0] == "version" {
-		_, err := fmt.Fprintln(out, Version)
+		_, err := fmt.Fprintln(out, version)
 		return err
 	}
 	cmd, cfgPath, selected, flags, err := parseOptions(args)
@@ -96,39 +61,26 @@ func runWithLog(ctx context.Context, args []string, out, logOutput io.Writer) er
 	}
 	events := slog.New(slog.NewTextHandler(logOutput, &slog.HandlerOptions{Level: level}))
 	var data any
-	c, operationErr := loadConfig(cfgPath)
-	if operationErr != nil {
-		operationErr = phaseError("config", operationErr)
-	} else if cmd == "status" || cmd == "verify" {
-		var missing bool
-		missing, operationErr = backupRootMissing(c.BackupDir)
-		if operationErr != nil {
-			operationErr = phaseError("config", operationErr)
-		} else if missing {
-			operationErr = fmt.Errorf("%s: backup directory missing; run backup to initialize it", cmd)
-		}
-	}
+	keeper, operationErr := open(cfgPath)
 	if operationErr == nil {
 		switch cmd {
 		case "status":
-			var s status
-			s, operationErr = inspectContext(ctx, c.BackupDir)
-			if operationErr != nil {
-				operationErr = phaseError("validation", operationErr)
-			} else {
+			var s report.Status
+			s, operationErr = keeper.Status(ctx)
+			if operationErr == nil {
 				data = s
 			}
 		case "verify":
-			var report verifyReport
-			report, operationErr = verify(ctx, c.BackupDir, selected, events)
-			if len(report.Backups) != 0 {
-				data = report
+			var result report.Verify
+			result, operationErr = keeper.Verify(ctx, selected, events)
+			if len(result.Backups) != 0 {
+				data = result
 			}
 		case "backup":
-			var report backupReport
-			report, operationErr = backup(ctx, c, events, flags.verbose)
+			var result report.Backup
+			result, operationErr = keeper.Backup(ctx, events, flags.verbose)
 			if operationErr == nil {
-				data = report
+				data = result
 			}
 		}
 	}
@@ -136,7 +88,7 @@ func runWithLog(ctx context.Context, args []string, out, logOutput io.Writer) er
 		return errors.Join(operationErr, err) // Preserve cancellation and the writer failure.
 	}
 	if operationErr != nil {
-		return &presentedError{cause: operationErr}
+		return &PresentedError{cause: operationErr}
 	}
 	return nil
 }
@@ -161,12 +113,12 @@ func presentResult(out io.Writer, cmd string, asJSON bool, data any, operationEr
 		return nil
 	}
 	switch value := data.(type) {
-	case backupReport:
+	case report.Backup:
 		_, err := fmt.Fprintln(out, "Backup: "+value.Name)
 		return err
-	case status:
+	case report.Status:
 		return printStatus(out, value)
-	case verifyReport:
+	case report.Verify:
 		if _, err := fmt.Fprintf(out, "Backups (%d):\n", len(value.Backups)); err != nil {
 			return err
 		}
@@ -220,7 +172,7 @@ func parseOptions(args []string) (cmd, cfgPath, selected string, flags commandFl
 	return
 }
 
-func printStatus(out io.Writer, s status) error {
+func printStatus(out io.Writer, s report.Status) error {
 	if _, err := fmt.Fprintf(out, "Backups (%d):\n", len(s.Backups)); err != nil {
 		return err
 	}
